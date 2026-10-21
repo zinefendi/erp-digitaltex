@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ERP DIGITAL-TEX — Studio 3D</title>
+<link rel="icon" href="icon.png">
+<style>
+  html,body{margin:0;height:100%;background:#f6f2ec;overflow:hidden}
+  #ps{position:fixed;inset:0;
+    /* couleurs vethypro.com appliquées au studio (variables de son thème) */
+    --brand:#29669d;--brand-d:#1f4f7d;--brand-dd:#173d62;--brand-l:#f6ece3;
+    --ui:#1f4f7d;--ui-2:#e04a16;--ui-tx:#f1e8df;
+    --mat:#efe7dd;--mat-2:#e6dacd;--mat-line:rgba(41,102,157,.10);--chalk:#e04a16;--chalk-ink:#fff;
+    --paper:#f6f2ec;--panel:#fffdfa;--ink:#1d2a38;--ink-2:#6a6258;--rule:#e4d9cd}
+  #boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#1f4f7d;font:600 15px system-ui,Segoe UI,sans-serif;z-index:5;background:#f6f2ec}
+  #boot i{width:42px;height:42px;border-radius:50%;border:3px solid #e4d9cd;border-top-color:#e04a16;animation:r 1s linear infinite}
+  @keyframes r{to{transform:rotate(1turn)}}
+</style>
+</head>
+<body>
+<div id="boot"><i></i><span>Studio 3D — chargement…</span></div>
+<div id="ps"></div>
+<script>window.PS_LOCAL_FONTS = 'fonts/fonts.css';</script>
+<script src="pont-erp.js"></script>
+<script>
+  // compte sans le droit « prix » : on masque le bouton prix et les blocs tarifs/avances (aucun tarif ne vient du serveur)
+  window.ERP_STUDIO_SANS_PRIX_CSS = '.price,.pricewrap,[data-a="price"],.adv,[data-price],[data-pricesub]{display:none!important}';
+</script>
+<script src="patron-studio.js"></script>
+<script>
+(async function () {
+  const boot = document.getElementById('boot');
+  try {
+    const r = await window.uniformDesktop.catalogue.get();
+    const cfg = r.catalogue;
+    const local = JSON.parse(localStorage.getItem('patron-studio:atelier-settings') || '{}');
+    Object.assign(cfg, {
+      mode: 'atelier', brand: 'Uniform Studio 3D', loggedIn: false,
+      isPro: true, watermark: false, wmView: false,
+      aiEnabled: false, shopEnabled: true, homeUrl: '',
+      pdfjsBase: 'vendor/',
+      atelier: { template: 'fiche-technique-modele.pdf', printBox: (cfg.atelier && cfg.atelier.printBox) || local.printBox || 'flex', service: (cfg.atelier && cfg.atelier.service) || '' },
+    });
+    await window.PatronStudio.mount(document.getElementById('ps'), cfg);
+    if (!r.prix_visibles) {
+      // compte sans le droit « prix » : aucun tarif n'arrive du serveur ; on masque aussi les zones de prix vides
+      const host = document.getElementById('ps'); const root = host.shadowRoot;
+      if (root) { const st = document.createElement('style'); st.textContent = window.ERP_STUDIO_SANS_PRIX_CSS || ''; root.appendChild(st); }
+    }
+  } catch (e) {
+    boot.innerHTML = '<span>Le studio n’a pas pu démarrer : ' + String(e.message).replace(/</g, '&lt;') + '</span>';
+    return;
+  }
+  boot.remove();
+  try { parent.postMessage({ erp: true, type: 'page-prete', page: 'studio' }, location.origin); } catch (_) {}
+})();
+</script>
+</body>
+</html>

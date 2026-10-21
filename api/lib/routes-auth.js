@@ -70,6 +70,11 @@ module.exports = async function routesAuth(app, opts) {
     return { ok: true };
   });
 
+  // Contrôle léger utilisé par Nginx (auth_request) pour protéger /studio/ : 204 si session valide, 401 sinon.
+  app.get('/api/auth/verifier', { config: { rateLimit: false } }, async (req, reply) => {
+    const u = await S.chargerSession(req);
+    return reply.code(u ? 204 : 401).send();
+  });
   app.get('/api/auth/moi', { config: { mdpProvisoireOk: true }, preHandler: S.exigerConnexion() }, async (req) => profil(req.utilisateur));
 
   app.post('/api/auth/mot-de-passe', {

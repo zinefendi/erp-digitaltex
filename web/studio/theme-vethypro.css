@@ -1,0 +1,15 @@
+/* Couleurs de vethypro.com : bleu #29669d, beige clair #f1e8df, orange #e04a16 (partagé par les pages intégrées) */
+:root{--b:#1f4f7d;--b2:#29669d;--bl:#f6ece3;--ink:#1d2a38;--ink2:#6a6258;--rule:#e4d9cd;--bg:#f6f2ec;--org:#c0510f;--vo:#e04a16}
+html,body{background:var(--bg)}
+header{background:var(--b)!important;border-bottom:3px solid var(--vo)}
+.tabs button.on{background:#fff;color:var(--b)!important;box-shadow:inset 0 -3px 0 var(--vo)}
+.li.on,.it.on{border-left-color:var(--vo)!important;background:var(--bl)!important}
+.btn:not(.ghost):not(.light):not(.danger){background:var(--b2);border-color:var(--b2)}
+.btn.save:not([disabled]),.btn.cta{background:var(--vo)!important;border-color:var(--vo)!important;color:#fff!important}
+.box,.kpi,.card,.fam-sec,table.t,.tot,.kv,.list,.plist,.lh{border-color:var(--rule)!important}
+table.t th,table.t tfoot td{background:#faf6f1!important}
+.kpi:hover{border-color:var(--vo)!important}
+input:focus,select:focus,textarea:focus{outline:2px solid #f3b79c!important;border-color:var(--vo)!important}
+/* dans l'ERP : la fenêtre ne se ferme pas, on navigue par le menu de gauche */
+body.erp #close,body.erp #back{display:none!important}
+body.erp header h1{display:none}

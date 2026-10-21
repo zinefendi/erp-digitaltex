@@ -71,6 +71,9 @@ test('mot de passe provisoire : seul le changement est autorisé', async () => {
   assert.match(r.headers['set-cookie'], /Secure/i);
   assert.match(r.headers['set-cookie'], /SameSite=Strict/i);
   etat.jetonAdmin = r.json().jeton;
+  assert.equal((await appel('GET', '/api/auth/verifier', { jeton: etat.jetonAdmin })).statusCode, 204);
+  assert.equal((await appel('GET', '/api/auth/verifier', { jeton: 'faux' })).statusCode, 401);
+  assert.equal((await appel('GET', '/api/auth/verifier')).statusCode, 401);
   assert.equal((await appel('GET', '/api/utilisateurs', { jeton: etat.jetonAdmin })).json().erreur, 'mdp_a_changer');
   assert.equal((await appel('GET', '/api/auth/moi', { jeton: etat.jetonAdmin })).statusCode, 200);
   // nouveau trop faible

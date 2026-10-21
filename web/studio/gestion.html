@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ERP DIGITAL-TEX — Gestion</title>
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  :root{--b:#1f4f7d;--b2:#29669d;--bl:#eaf2fa;--ink:#16263a;--ink2:#5a6b7c;--rule:#dbe3ea;--bg:#f3f6f9;--ok:#1e7d46;--red:#b4442f;--org:#a8620c}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  html,body{margin:0;height:100%;font:14px/1.45 "Instrument Sans",system-ui,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}
+  header{height:58px;background:var(--b);color:#fff;display:flex;align-items:center;gap:14px;padding:0 16px;position:sticky;top:0;z-index:5}
+  header h1{font:700 17px "Bricolage Grotesque","Instrument Sans",sans-serif;margin:0;display:flex;align-items:center;gap:10px}
+  header h1 img{width:32px;height:32px;border-radius:9px;background:#fff;padding:3px}
+  header .sp{flex:1}
+  .tabs{display:flex;gap:4px;background:rgba(255,255,255,.1);padding:4px;border-radius:12px}
+  .tabs button{border:0;background:transparent;color:#dbe7f3;font:600 13px "Instrument Sans",system-ui,"Segoe UI",sans-serif;padding:7px 14px;border-radius:9px;cursor:pointer}
+  .tabs button.on{background:#fff;color:var(--b)}
+  .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--b2);background:var(--b2);color:#fff;font:600 13px "Instrument Sans",system-ui,"Segoe UI",sans-serif;padding:8px 14px;border-radius:10px;cursor:pointer;white-space:nowrap}
+  .btn:hover{filter:brightness(1.07)} .btn[disabled]{opacity:.45;cursor:default;filter:none}
+  .btn.ghost{background:#fff;color:var(--b2)} .btn.sm{padding:5px 10px;font-size:12.5px;border-radius:8px}
+  header .btn{background:#fff;color:var(--b);border-color:#fff}
+  main{height:calc(100% - 58px)}
+  .pane{max-width:1180px;margin:0 auto;padding:20px 26px 50px;overflow:auto;height:100%}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .kpi{background:#fff;border:1px solid var(--rule);border-radius:14px;padding:14px 16px;text-align:left;font:inherit;color:inherit;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+  .kpi:hover{border-color:#9cc3e6} .kpi span{font-size:12px;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em} .kpi>b{font:700 24px "Bricolage Grotesque","Instrument Sans",system-ui,"Segoe UI",sans-serif} .kpi small{color:var(--ink2);font-size:12.5px}
+  .cols2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .box{background:#fff;border:1px solid var(--rule);border-radius:14px;padding:12px 16px;margin-bottom:14px}
+  h2{font:700 20px "Bricolage Grotesque","Instrument Sans",system-ui,"Segoe UI",sans-serif;margin:0 0 4px} h3{font:700 13px "Instrument Sans",system-ui,"Segoe UI",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--b2);margin:20px 0 8px} h3 .mute{text-transform:none;letter-spacing:0;font-weight:600}
+  .box h3{margin-top:4px}
+  .split{display:grid;grid-template-columns:360px 1fr;height:100%}
+  .list{background:#fff;border-right:1px solid var(--rule);overflow:auto}
+  .lh{position:sticky;top:0;background:#fff;padding:10px;border-bottom:1px solid var(--rule);display:flex;gap:6px;align-items:flex-start;z-index:2}
+  .tb{flex:1;display:flex;flex-direction:column;gap:6px}
+  .li{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #eef2f6;background:transparent;padding:10px 14px;cursor:pointer;font:inherit;color:inherit;border-left:3px solid transparent}
+  .li:hover{background:var(--bg)} .li.on{background:var(--bl);border-left-color:var(--b2)}
+  .li div{display:flex;justify-content:space-between;gap:8px;align-items:center} .li small{color:var(--ink2);font-size:12px}
+  .detail{overflow:auto;padding:18px 24px 50px}
+  .dh{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px} .dh .row{display:flex;gap:6px;flex-wrap:wrap}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  label{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:600;color:var(--ink2)}
+  label.chk{flex-direction:row;align-items:center;gap:8px;font-weight:500;color:var(--ink)} label.chk input{width:auto;min-height:0}
+  label.inl{flex-direction:row;align-items:center;gap:6px} label.inl input,label.inl select{width:90px}
+  input,select{font:14px "Instrument Sans",system-ui,"Segoe UI",sans-serif;color:var(--ink);border:1px solid var(--rule);border-radius:9px;padding:7px 10px;background:#fff;min-height:36px;width:100%}
+  input:focus,select:focus{outline:2px solid #9cc3e6;border-color:var(--b2)} input[disabled],select[disabled]{background:#f4f6f8;color:var(--ink2)}
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px} .g2 .w2{grid-column:1/-1}
+  .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  table.t{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+  table.t th{text-align:left;font:700 11px "Instrument Sans",system-ui,"Segoe UI",sans-serif;text-transform:uppercase;letter-spacing:.05em;color:var(--ink2);padding:7px 9px;background:#f6f8fa;border-bottom:1px solid var(--rule)}
+  table.t td{padding:6px 9px;border-bottom:1px solid #eef2f6;vertical-align:middle;font-size:13px}
+  table.t tr[data-open]{cursor:pointer} table.t tr[data-open]:hover td{background:var(--bl)}
+  table.t .n{text-align:right;white-space:nowrap} table.t .r{text-align:right;white-space:nowrap}
+  table.t tfoot td{background:#f6f8fa;font-weight:700}
+  table.ed input{min-height:30px;padding:4px 7px} table.ed td.n input{width:72px;text-align:right}
+  table.ed td:first-child{min-width:210px} .detail table.ed th,.detail table.ed td{padding-left:6px;padding-right:6px} .detail table.ed td.n input[data-k=qty]{width:62px}
+  .b{font-weight:700} .mute{color:var(--ink2)} .small{font-size:12px} .r{color:var(--red)} .ok{color:var(--ok)} em.r{font-style:normal;font-weight:700}
+  .st{display:inline-block;font:700 11px "Instrument Sans",system-ui,"Segoe UI",sans-serif;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .st-b{background:#e6effa;color:#1f4f7d} .st-o{background:#fff1dc;color:var(--org)} .st-g{background:#e4f4ea;color:#1e7d46} .st-g2{background:#1e7d46;color:#fff} .st-v{background:#efe8fb;color:#5b3c99} .st-r{background:#fbe7e3;color:var(--red)} .st-x{background:#eceff2;color:#6b7783;text-decoration:line-through}
+  .tag{font:700 10px "Instrument Sans",system-ui,"Segoe UI",sans-serif;background:#eef2f6;color:var(--ink2);border-radius:5px;padding:1px 5px;text-transform:uppercase}
+  .ib{border:1px solid var(--rule);background:#fff;border-radius:7px;width:28px;height:28px;cursor:pointer;color:var(--ink2);font-size:12px}
+  .linkb{border:0;background:none;color:var(--b2);font:700 13px "Instrument Sans",system-ui,"Segoe UI",sans-serif;cursor:pointer;padding:0;text-decoration:underline}
+  .advf{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;padding:10px;border:1px dashed #b9c8d6;border-radius:10px;background:#fafcfe}
+  .advf input,.advf select{width:auto;min-width:0} .advf #advamt,.advf #payamt{width:120px} .advf [data-date]{width:150px} .advf #advref,.advf #payref{width:180px}
+  .chipb{border:1px solid var(--rule);background:#fff;border-radius:999px;padding:4px 10px;font:600 12px "Instrument Sans",system-ui,"Segoe UI",sans-serif;cursor:pointer;color:var(--b2)}
+  .kv{display:grid;grid-template-columns:auto 1fr auto 1fr auto 1fr;gap:6px 12px;background:#fff;border:1px solid var(--rule);border-radius:12px;padding:10px 14px;margin-bottom:12px;align-items:center}
+  .kv span{color:var(--ink2);font-size:12px;font-weight:600}
+  .tot{margin:12px 0 4px auto;max-width:380px;background:#fff;border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+  .tot div{display:flex;justify-content:space-between;padding:6px 12px;border-bottom:1px solid #eef2f6;font-size:13px} .tot div span{color:var(--ink2)}
+  .tot div.big{background:var(--b);color:#fff;font-size:14px} .tot div.big span{color:#dbe7f3} .tot div.big.due{background:var(--red)} .tot div.big.ok{background:var(--ok)}
+  .tot.sm{max-width:none;margin-top:10px}
+  .prods{display:flex;gap:8px;flex-wrap:wrap} .prod{display:flex;gap:8px;align-items:center;background:#fff;border:1px solid var(--rule);border-radius:10px;padding:6px 10px 6px 6px} .prod img{width:44px;height:44px;object-fit:contain;background:#eef2f6;border-radius:8px} .prod div{display:flex;flex-direction:column} .prod small{color:var(--ink2)}
+  .empty{padding:40px 20px;color:var(--ink2);text-align:center}
+  .hint{color:var(--ink2);font-size:12.5px;margin:6px 0 10px}
+  #busy{position:fixed;inset:0;background:rgba(20,35,52,.45);display:flex;align-items:center;justify-content:center;z-index:40}
+  #busy div{background:#fff;padding:18px 24px;border-radius:14px;display:flex;gap:12px;align-items:center;font-weight:600}
+  #busy i{width:22px;height:22px;border-radius:50%;border:3px solid #cfdbe6;border-top-color:var(--b2);animation:r 1s linear infinite} @keyframes r{to{transform:rotate(1turn)}}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;transition:.25s;max-width:80vw;z-index:50;pointer-events:none}
+  #toast.show{opacity:1;transform:translateX(-50%)} #toast.err{background:var(--red)}
+  #dlg{position:fixed;inset:0;background:rgba(20,35,52,.45);display:flex;align-items:center;justify-content:center;z-index:30;padding:20px}
+  .dlg-b{background:#fff;border-radius:16px;padding:20px 22px;width:min(620px,100%);max-height:92vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:12px}
+  .dlg-b.wide{width:min(980px,100%)}
+  .dlg-b h3{margin:0;font:700 18px "Bricolage Grotesque","Instrument Sans",system-ui,"Segoe UI",sans-serif;color:var(--ink);letter-spacing:0;text-transform:none}
+  .dlg-b .hint{margin:0} .dlg-f{justify-content:flex-end}
+  @media (max-width:1200px){.kpis{grid-template-columns:1fr 1fr}.split{grid-template-columns:300px 1fr}.g4{grid-template-columns:1fr 1fr}.kv{grid-template-columns:auto 1fr auto 1fr}}
+</style>
+<link rel="stylesheet" href="theme-vethypro.css">
+</head>
+<body>
+<header>
+  <h1><img src="icon.png" alt="">Gestion</h1>
+  <div class="tabs"><button data-tab="dash" class="on">Tableau de bord</button><button data-tab="orders">Commandes</button><button data-tab="bls">Bons de livraison</button><button data-tab="invoices">Factures</button><button data-tab="clients">Clients</button></div>
+  <span class="sp"></span>
+  <button class="btn" id="close">Fermer</button>
+</header>
+<main id="main"></main>
+<div id="busy" hidden><div><i></i><span>…</span></div></div>
+<div id="toast"></div>
+<div id="dlg" hidden></div>
+<script src="pont-erp.js"></script>
+<script>document.body.classList.add("erp");</script>
+<script src="gestion.js"></script>
+<script src="onglets-erp.js"></script>
+</body>
+</html>

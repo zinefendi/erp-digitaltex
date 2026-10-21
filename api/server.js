@@ -12,7 +12,9 @@ function construire(opts = {}) {
     ajv: { customOptions: { removeAdditional: false, coerceTypes: true, useDefaults: true } },
   });
   app.register(require('@fastify/cookie'));
-  app.register(require('@fastify/rate-limit'), { global: true, max: 300, timeWindow: '1 minute' });
+  // Limite globale par session (plusieurs postes peuvent partager la même IP publique), sinon par IP.
+  app.register(require('@fastify/rate-limit'), { global: true, max: 1200, timeWindow: '1 minute',
+    keyGenerator: (req) => { const j = require('./lib/securite').jetonDe(req); return j ? 's:' + require('crypto').createHash('sha256').update(j).digest('hex').slice(0, 24) : 'ip:' + req.ip; } });
 
   app.setErrorHandler((err, req, reply) => {
     if (err.validation) return reply.code(400).send({ erreur: 'requete_invalide', message: 'Requête invalide : ' + err.message });
@@ -46,6 +48,7 @@ function construire(opts = {}) {
   app.register(require('./lib/routes-utilisateurs'));
   app.register(require('./lib/routes-roles'));
   app.register(require('./lib/routes-parametres'));
+  app.register(require('./lib/routes-metier'));
   return app;
 }
 

@@ -156,14 +156,14 @@ module.exports = async function routesParametres(app) {
   // ------------------------------------------------------------ Accueil : 10 modules
   // État de chaque module (lot du calendrier) et compteurs utiles — sans montant si non autorisé.
   const LOTS = {
-    infographie: { lot: 3, etat: 'Sur les postes (application 3.3.0) · en réseau au lot 3' },
-    commercial: { lot: 4, etat: 'Sur les postes (Gestion 3.3.0) · en réseau au lot 4' },
-    compta_clients: { lot: 8, etat: 'Prévu au lot 8' },
-    compta_fournisseurs: { lot: 8, etat: 'Prévu au lot 8' },
+    infographie: { lot: 3, etat: 'Studio 3D et catalogue en réseau · Lookbook au lot 10', actif: true },
+    commercial: { lot: 4, etat: 'Clients, commandes, BL, factures en réseau · devis, proformas, avoirs au lot 4', actif: true },
+    compta_clients: { lot: 8, etat: 'Encours et échéances en service · lettrage et relances au lot 8', actif: true },
+    compta_fournisseurs: { lot: 8, etat: 'Fichier fournisseurs en service · achats et factures au lot 8', actif: true },
     paie: { lot: 9, etat: 'Prévu au lot 9' },
-    production: { lot: 7, etat: 'Prévu au lot 7 (OF en 3 parties, tablette atelier)' },
-    bom: { lot: 7, etat: 'Prévu au lot 7' },
-    stock_mp: { lot: 6, etat: 'Prévu au lot 6' },
+    production: { lot: 7, etat: 'Plan de charge des commandes en service · OF en 3 parties au lot 7', actif: true },
+    bom: { lot: 7, etat: 'Fiches articles en lecture · nomenclatures au lot 7', actif: true },
+    stock_mp: { lot: 6, etat: 'Fichier des matières en service · mouvements au lot 6', actif: true },
     stock_pf: { lot: 6, etat: 'Prévu au lot 6' },
     parametres: { lot: 2, etat: 'En service', actif: true },
   };
@@ -171,8 +171,9 @@ module.exports = async function routesParametres(app) {
     const cat = await D.catalogue();
     const eff = req.droits;
     const modules = cat.modules.filter((m) => m.fonctions.some((f) => D.peut(eff, f.code, 'lire')))
-      .map((m) => ({ code: m.code, numero: m.numero, libelle: m.libelle, ...LOTS[m.code], actif: !!LOTS[m.code]?.actif }));
-    const r = { modules };
+      .map((m) => ({ code: m.code, numero: m.numero, libelle: m.libelle, ...LOTS[m.code], actif: !!LOTS[m.code]?.actif,
+        fonctions: m.fonctions.filter((f) => D.peut(eff, f.code, 'lire')).map((f) => ({ code: f.code, libelle: f.libelle, actions: eff.super_admin ? f.actions : (eff.droits[f.code] || []) })) }));
+    const r = { modules, visibilites: eff.visibilites, super_admin: eff.super_admin };
     if (D.peut(eff, 'parametres.utilisateurs', 'lire')) {
       r.comptes = (await pool.query(`select count(*) filter (where actif)::int actifs, count(*) filter (where actif and doit_changer_mdp)::int provisoires,
         count(*) filter (where verrouille_jusqu > now())::int verrouilles from noyau.utilisateurs`)).rows[0];

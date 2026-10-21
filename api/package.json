@@ -1,6 +1,6 @@
 {
   "name": "erp-digitaltex-api",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "API ERP DIGITAL-TEX — lot 2 : comptes, connexion, audit, droits, paramètres",
   "main": "server.js",
