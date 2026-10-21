@@ -2,6 +2,7 @@
 // Sessions, contrôle d'accès et journal d'audit.
 const crypto = require('crypto');
 const { pool } = require('./db');
+const { droitsEffectifs, peut } = require('./droits');
 
 const COOKIE = 'erp_session';
 const INACTIVITE_MAX_MS = 12 * 3600 * 1000;      // session fermée après 12 h sans activité
@@ -76,6 +77,10 @@ function exigerConnexion(opts = {}) {
     req.utilisateur = u;
     if (opts.roles && !opts.roles.some((r) => u.roles.includes(r))) {
       return reply.code(403).send({ erreur: 'interdit', message: 'Votre rôle ne permet pas cette action.' });
+    }
+    req.droits = await droitsEffectifs(u.id, u.roles);
+    if (opts.droit && !peut(req.droits, opts.droit[0], opts.droit[1])) {
+      return reply.code(403).send({ erreur: 'interdit', message: 'Vos droits ne permettent pas cette action.' });
     }
   };
 }

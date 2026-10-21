@@ -4,8 +4,11 @@ const { pool, transaction } = require('./db');
 const mdp = require('./mdp');
 const S = require('./securite');
 
+// Écritures sur les comptes : Super administrateur seulement (non délégable : évite qu'un rôle
+// personnalisé puisse se donner plus de droits). Lectures : selon les droits du module Paramètres.
 const ADMIN = S.exigerConnexion({ roles: ['super_admin'] });
-const LECTURE_AUDIT = S.exigerConnexion({ roles: ['super_admin', 'direction'] });
+const LECTURE_COMPTES = S.exigerConnexion({ droit: ['parametres.utilisateurs', 'lire'] });
+const LECTURE_AUDIT = S.exigerConnexion({ droit: ['parametres.audit', 'lire'] });
 
 const COLONNES = `u.id, u.identifiant, u.nom_complet, u.email, u.actif, u.doit_changer_mdp,
   u.verrouille_jusqu > now() as verrouille, u.derniere_connexion, u.cree_le, u.maj_le, u.version,
@@ -42,13 +45,10 @@ const proprietesCompte = {
 };
 
 module.exports = async function routesUtilisateurs(app) {
-  app.get('/api/roles', { preHandler: ADMIN }, async () =>
-    (await pool.query('select id, code, libelle, description, systeme from noyau.roles order by id')).rows);
-
-  app.get('/api/utilisateurs', { preHandler: ADMIN }, async () =>
+  app.get('/api/utilisateurs', { preHandler: LECTURE_COMPTES }, async () =>
     (await pool.query(`select ${COLONNES} from noyau.utilisateurs u order by u.actif desc, u.nom_complet`)).rows);
 
-  app.get('/api/utilisateurs/:id', { preHandler: ADMIN, schema: { params: { type: 'object', properties: { id: { type: 'integer' } } } } }, async (req, reply) => {
+  app.get('/api/utilisateurs/:id', { preHandler: LECTURE_COMPTES, schema: { params: { type: 'object', properties: { id: { type: 'integer' } } } } }, async (req, reply) => {
     const u = await lire(pool, req.params.id);
     return u || erreur(reply, 404, 'introuvable', 'Utilisateur introuvable.');
   });

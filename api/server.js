@@ -44,6 +44,7 @@ function construire(opts = {}) {
 
   app.register(require('./lib/routes-auth'), { limiteConnexion: opts.limiteConnexion ?? 10 });
   app.register(require('./lib/routes-utilisateurs'));
+  app.register(require('./lib/routes-roles'));
   return app;
 }
 
