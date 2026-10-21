@@ -50,6 +50,7 @@ function construire(opts = {}) {
   app.register(require('./lib/routes-parametres'));
   app.register(require('./lib/routes-metier'));
   app.register(require('./lib/routes-compta'));
+  app.register(require('./lib/routes-produits-finis'));
   return app;
 }
 

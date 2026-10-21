@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ERP DIGITAL-TEX — Produits finis</title>
+<link rel="icon" href="icon.png">
+<style>
+  :root{--brand:#29669d;--brand-d:#1f4f7d;--accent:#e04a16;--paper:#f6f2ec;--panel:#fffdfa;--ink:#1d2a38;--ink2:#6a6258;--rule:#e4d9cd;--ok:#1e7d45;--warn:#b45309}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.45 system-ui,'Segoe UI',sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--brand);color:#fff;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;font-weight:600}
+  header .sp{flex:1}
+  button{font:inherit;border:1px solid var(--rule);background:#fff;color:var(--ink);border-radius:6px;padding:6px 12px;cursor:pointer}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  button.sm{padding:3px 8px;font-size:12.5px}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  main{padding:14px 16px;display:grid;gap:14px}
+  .box{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:12px 14px}
+  .box h2{margin:0 0 8px;font-size:14.5px;color:var(--brand-d)}
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--rule);font-size:13px}
+  th{color:var(--ink2);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+  tr[data-open]{cursor:pointer}tr[data-open]:hover{background:#f2ece4}
+  input,select{font:inherit;padding:5px 8px;border:1px solid var(--rule);border-radius:6px;background:#fff;color:var(--ink)}
+  label{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--ink2)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+  .mute{color:var(--ink2)} .small{font-size:12px} .b{font-weight:600}
+  .ok{color:var(--ok)} .warn{color:var(--warn)}
+  .hide{display:none!important}
+  #dlg{position:fixed;inset:0;background:rgba(20,30,40,.45);display:none;align-items:flex-start;justify-content:center;z-index:9;overflow:auto;padding:40px 12px}
+  #dlg>div{background:var(--panel);border-radius:10px;padding:18px;max-width:860px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.2)}
+  #dlg h3{margin:0 0 10px;font-size:15px}
+  #dlg .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+  .lignes{display:grid;gap:6px}
+  .lignes .row input{width:110px} .lignes .row input.w{width:220px}
+  .calc{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:10px}
+  .calc div{background:#f2ece4;border-radius:6px;padding:6px 10px}
+  .calc span{display:block;font-size:11.5px;color:var(--ink2)} .calc b{font-size:14px}
+  .flash{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:var(--brand-d);color:#fff;padding:9px 16px;border-radius:8px;z-index:10;max-width:90%}
+  .flash.err{background:#a4261c}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+  .tabs button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  iframe{border:0;width:100%;height:150px;background:#fff}
+</style>
+</head>
+<body>
+<header>
+  <h1>Produits finis</h1>
+  <span class="small" id="qui"></span>
+  <span class="sp"></span>
+  <button id="btn-conv" class="hide">Convertir un article (0.7.0)</button>
+  <button id="btn-codes" class="hide">Codes article</button>
+  <button id="btn-couts" class="hide">Coûts &amp; tarifs</button>
+  <button id="btn-new" class="primary">+ Nouveau produit fini</button>
+</header>
+<main>
+  <section class="box">
+    <div class="row"><label>Recherche<input id="q" placeholder="référence, client…"></label>
+      <label>État<select id="fetat"><option value="">Tous</option><option value="basique">Basiques</option><option value="specifique">Spécifiques</option></select></label>
+      <span class="sp" style="flex:1"></span><span class="small mute" id="compte"></span></div>
+    <table><thead><tr><th>Référence</th><th>Code</th><th>Client</th><th>État</th><th>Taillant</th><th class="n">Prix HT</th><th class="n">PRI</th><th>Modifié</th><th></th></tr></thead>
+      <tbody id="liste"></tbody></table>
+    <p class="small mute" id="note-prix"></p>
+  </section>
+</main>
+<div id="dlg"></div>
+<script src="produits-finis.js"></script>
+</body>
+</html>

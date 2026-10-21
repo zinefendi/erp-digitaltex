@@ -146,10 +146,21 @@ module.exports = async function routesCompta(app) {
   });
 
   // ================================================================ ARTICLES ET PRESTATIONS HORS STUDIO (module 2)
-  const lireArticles = async (eff) => {
+    const lireArticles = async (eff) => {
     const r = (await pool.query(`select id, code, designation, type, unite, prix_ht::float8 prix_ht, tva::float8 tva, compte, note, actif, version, maj_le
       from commercial.articles order by actif desc, lower(designation)`)).rows.map((x) => ({ ...x, id: Number(x.id) }));
-    return D.voit(eff, 'prix') ? r : r.map(({ prix_ht, ...a }) => a);
+    // 0.8.0 : les produits finis référencés sont vendables comme articles — leur prix n'est envoyé
+    // qu'aux comptes qui ont le droit de voir les prix (règle CDC § 5.2).
+    if (D.voit(eff, 'prix')) {
+      const t = (await pool.query(`select valeur from parametres.fiscalite where code = 'tva_normale' and en_vigueur_le <= current_date order by en_vigueur_le desc limit 1`)).rows[0];
+      const tva = t ? Number(t.valeur) : 19;
+      const pf = (await pool.query(`select reference, client_nom, prix_ht from pf.produits where annule = false order by annee desc, numero desc limit 500`)).rows;
+      r.unshift(...pf.map((p) => ({ id: 'pf:' + p.reference, code: p.reference,
+        designation: 'Produit fini ' + p.reference + (p.client_nom ? ' · ' + p.client_nom : ''),
+        type: 'produit', unite: 'pièce', prix_ht: Number(p.prix_ht), tva, pf: true })));
+    }
+
+      return D.voit(eff, 'prix') ? r : r.map(({ prix_ht, ...a }) => a);
   };
   app.get('/api/commercial/articles', { preHandler: exige('commercial.articles', 'lire') }, async (req) => lireArticles(req.droits));
   const schArticle = { type: 'object', additionalProperties: false, required: ['code', 'designation'], properties: {
@@ -525,12 +536,13 @@ module.exports = async function routesCompta(app) {
     return { ok: true };
   }));
 
-  const periode = { type: 'object', properties: { du: { type: 'string', format: 'date' }, au: { type: 'string', format: 'date' }, format: { type: 'string', enum: ['csv', 'xlsx'] }, journal: { type: 'string', maxLength: 4 } } };
+  const periode = { type: 'object', properties: { du: { type: 'string', format: 'date' }, au: { type: 'string', format: 'date' }, format: { type: 'string', enum: ['csv', 'xlsx'] }, journal: { type: 'string', maxLength: 4 }, devise: { type: 'string', enum: DEVISES } } };
   const bornes = (q) => { const y = new Date().getFullYear(); return [q.du || `${y}-01-01`, q.au || `${y}-12-31`]; };
 
   app.get('/api/compta/ecritures', { preHandler: exige('compta_generale.journaux', 'lire', ['prix', 'achats']), schema: { querystring: periode } }, async (req) => {
     const [du, au] = bornes(req.query);
-    const E = (await ecritures(pool, du, au)).filter((e) => !req.query.journal || e.journal === req.query.journal);
+    const E = (await ecritures(pool, du, au)).filter((e) => !req.query.journal || e.journal === req.query.journal)
+      .filter((e) => !req.query.devise || e.devise === req.query.devise); // 0.8.0 : journal local DT ou en devise
     const bal = {};
     for (const e of E) for (const l of e.lignes) { const k = l.compte + '|' + l.devise; const b = bal[k] ||= { compte: l.compte, devise: l.devise, debit: 0, credit: 0 }; b.debit = r3(b.debit + l.debit); b.credit = r3(b.credit + l.credit); }
     const desequilibres = E.filter((e) => Math.abs(r3(e.lignes.reduce((s, l) => s + l.debit - l.credit, 0))) > 0.0005).map((e) => e.piece);
@@ -540,7 +552,7 @@ module.exports = async function routesCompta(app) {
   // ---------- exports au choix CSV / Excel ----------
   const exportJournaux = async (req, reply) => {
     const [du, au] = bornes(req.query);
-    const E = await ecritures(pool, du, au);
+    const E = (await ecritures(pool, du, au)).filter((e) => !req.query.devise || e.devise === req.query.devise);
     const lib = { VE: 'Ventes', AC: 'Achats', BQ: 'Banque', CA: 'Caisse' };
     const lignes = [['Journal', 'Date', 'Pièce', 'Compte', 'Tiers', 'Libellé', 'Débit', 'Crédit', 'Devise']];
     for (const e of E) for (const l of e.lignes) lignes.push([e.journal, e.date, e.piece, l.compte, l.tiers || '', e.libelle, l.debit || 0, l.credit || 0, l.devise]);
@@ -551,6 +563,27 @@ module.exports = async function routesCompta(app) {
     return envoyerTableau(reply, `ecritures-${du}-${au}`, req.query.format, feuilles);
   };
   app.get('/api/compta/export/journaux', { preHandler: exige('compta_generale.journaux', 'exporter', ['prix', 'achats']), schema: { querystring: periode } }, exportJournaux);
+
+  // Tableau de bord (0.8.0) : totaux séparés par devise (local DT, export EUR, export USD)
+  app.get('/api/compta/tableau-de-bord', { preHandler: exige('compta_generale.journaux', 'lire', ['prix', 'achats']), schema: { querystring: periode } }, async (req) => {
+    const [du, au] = bornes(req.query);
+    const ventes = {};
+    for (const f of (await facturesClients(pool)).filter((x) => x.status !== 'annulee' && x.date >= du && x.date <= au)) {
+      const d = devise(f), e = etatFacture(f);
+      const v = ventes[d] ||= { devise: d, factures: 0, ht: 0, tva: 0, net: 0, regle: 0, reste: 0 };
+      v.factures++; v.ht = r3(v.ht + e.t.ht); v.tva = r3(v.tva + e.t.tva); v.net = r3(v.net + e.t.net);
+      v.regle = r3(v.regle + e.regle); v.reste = r3(v.reste + e.reste);
+    }
+    const achats = {};
+    const ff = (await pool.query(`select devise, ht::float8 ht, tva::float8 tva, net::float8 net, statut from compta.factures_fournisseurs
+      where date between $1 and $2`, [du, au])).rows;
+    for (const f of ff.filter((x) => x.statut !== 'annulee')) {
+      const a = achats[f.devise] ||= { devise: f.devise, factures: 0, ht: 0, tva: 0, net: 0 };
+      a.factures++; a.ht = r3(a.ht + f.ht); a.tva = r3(a.tva + f.tva); a.net = r3(a.net + f.net);
+    }
+    return { du, au, ventes: Object.values(ventes).sort((a, b) => a.devise.localeCompare(b.devise)),
+      achats: Object.values(achats).sort((a, b) => a.devise.localeCompare(b.devise)) };
+  });
 
   app.get('/api/compta/export/ventes', { preHandler: exige('compta_clients.exports', 'exporter', ['prix']), schema: { querystring: periode } }, async (req, reply) => {
     const [du, au] = bornes(req.query);

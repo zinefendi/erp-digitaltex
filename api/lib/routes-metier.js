@@ -197,7 +197,28 @@ module.exports = async function routesMetier(app) {
       if (avant && col === 'orders' && rec.status === 'annulee' && avant.status !== 'annulee' && !D.peut(req.droits, 'commercial.commandes', 'annuler')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas d’annuler une commande.');
       if (col === 'invoices' && !avant && !rec.number) return erreur(reply, 400, 'numero_absent', 'Une facture doit avoir un numéro officiel.');
       if (col === 'invoices' && !avant) rec = { ...rec, payments: (rec.payments || []).filter((p) => p && !p.enc) };
-      rec.id ||= rid();
+            // 0.8.0 : contrôle vente à perte sur les lignes de produits finis (prix < PRI → confirmation obligatoire, tracée dans l'audit)
+      if (!sansPrix && (col === 'orders' || col === 'invoices') && Array.isArray(rec.lines)) {
+        const refs = [...new Set(rec.lines.map((l) => String(l.article || '')).filter((a) => /^[A-Z]+[0-9]{3}[0-9]{2}[BEFHU]$/.test(a)))];
+        if (refs.length) {
+          const pf = (await c.query('select reference, pri::float8 pri from pf.produits where reference = any($1) and annule = false', [refs])).rows;
+          const pris = Object.fromEntries(pf.map((p) => [p.reference, p.pri]));
+          const ttc = col === 'invoices' ? rec.pricesTTC !== false : true;
+          const tva = col === 'invoices' ? (+rec.tva || 0) : 19;
+          const enPerte = [];
+          for (const l of rec.lines) {
+            const pri = pris[String(l.article || '')];
+            if (!pri) continue;
+            const puHt = ttc ? (+l.pu || 0) * (1 - (+l.remise || 0) / 100) / (1 + tva / 100) : (+l.pu || 0) * (1 - (+l.remise || 0) / 100);
+            if (puHt < pri - 0.0005) enPerte.push(l.article);
+          }
+          if (enPerte.length && !req.body.confirmer_perte) {
+            return erreur(reply, 409, 'vente_a_perte', `Attention : vente à perte sur ${enPerte.join(', ')} (prix de revient inférieur au prix de vente). Cochez la confirmation pour enregistrer.`);
+          }
+          if (enPerte.length) await S.auditer(c, req, 'vente_a_perte_confirmee', { entite: col === 'orders' ? 'commande' : 'facture', entiteId: rec.id || '', details: { lignes: enPerte } });
+        }
+      }
+rec.id ||= rid();
       rec.updatedAt = new Date().toISOString(); rec.createdAt ||= avant?.createdAt || rec.updatedAt;
       await c.query(`insert into commercial.documents (collection, id, donnees, maj_par) values ($1, $2, $3, $4)
         on conflict (collection, id) do update set donnees = excluded.donnees, maj_le = now(), maj_par = excluded.maj_par`, [col, rec.id, rec, req.utilisateur.id]);
