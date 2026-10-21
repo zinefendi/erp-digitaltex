@@ -1,0 +1,14 @@
+#!/bin/sh
+# Hook du dépôt nu /opt/erp/code-source/erp.git : à chaque envoi sur main,
+# 1) copie vers GitHub si la télécommande "github" existe, 2) lance les tests en arrière-plan.
+while read ancien nouveau ref; do
+  [ "$ref" = "refs/heads/main" ] || continue
+  if git remote | grep -qx github; then
+    GIT_SSH_COMMAND="ssh -i $HOME/.ssh/github_erp -o IdentitiesOnly=yes -o BatchMode=yes" \
+      git push --mirror github >/opt/erp/journaux/github-miroir.txt 2>&1 \
+      && echo "Copie GitHub : OK" || echo "Copie GitHub : ÉCHEC (voir /opt/erp/journaux/github-miroir.txt)"
+  fi
+  git archive "$nouveau" dev/ci/tester-commit.sh | tar -xO > /opt/erp/scripts/tester-commit.sh 2>/dev/null && chmod +x /opt/erp/scripts/tester-commit.sh
+  setsid nohup /opt/erp/scripts/tester-commit.sh "$nouveau" >/dev/null 2>&1 < /dev/null &
+  echo "Tests lancés sur le VPS pour $(echo "$nouveau" | cut -c1-7) — résultat dans 1 à 2 min : /opt/erp/journaux/tests/dernier.txt"
+done

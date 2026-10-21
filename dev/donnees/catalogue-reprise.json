@@ -1,0 +1,1442 @@
+{
+ "mode": "wp",
+ "brand": "Uniform Studio 3D",
+ "startGarment": "polo_h_ml",
+ "startColor": "#29669d",
+ "loggedIn": false,
+ "isPro": false,
+ "watermark": true,
+ "aiEnabled": false,
+ "credits": null,
+ "shopEnabled": true,
+ "watermarkText": "VETHYPRO",
+ "wmView": false,
+ "passPrice": "20 DT",
+ "pass": null,
+ "models": {
+  "chef": {
+   "url": "models/chef.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "cap": {
+   "url": "models/cap.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "polo_f": {
+   "url": "models/polo_f.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "bermuda_safari": {
+   "url": "models/bermuda_safari.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "tee_h": {
+   "url": "models/tee_h.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "apron": {
+   "url": "models/apron.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "tee_f": {
+   "url": "models/tee_f.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "veste_zippe": {
+   "url": "models/veste_zippe.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "toque": {
+   "url": "models/toque.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "gilet": {
+   "url": "models/gilet.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "polo_h_ml": {
+   "url": "models/polo_h_ml.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "polo_h_copie": {
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false,
+   "url": "user-models/polo_h_copie-mv79ls4a.glb",
+   "size": 6455240,
+   "src": "POLO MC HOMME.glb",
+   "optimized": true
+  }
+ },
+ "catalog": [
+  {
+   "id": "polo_h_copie",
+   "name": "Polo homme Manche Courte",
+   "section": "haut",
+   "icon": "polo_h_mc",
+   "base": "polo_h",
+   "print": {
+    "front": {
+     "wIn": 4.724,
+     "hIn": 4,
+     "gTop": 5.2,
+     "offsetIn": 3.6
+    },
+    "back": {
+     "wIn": 11.024,
+     "hIn": 14,
+     "gTop": 4.173,
+     "offsetIn": 0
+    },
+    "left": {
+     "wIn": 3.15,
+     "hIn": 3.15,
+     "gTop": 3.9,
+     "offsetIn": 0
+    },
+    "right": {
+     "wIn": 3.15,
+     "hIn": 3.15,
+     "gTop": 3.9,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "15fbcad9d5394559ab6b83a7180f11ec",
+    "name": "MV2 Polo Shirt"
+   },
+   "family": "polo",
+   "familyLabel": "Polo",
+   "gender": "",
+   "sleeve": "",
+   "style": "",
+   "familyIcon": "polo_h_mc",
+   "trims": {
+    "collar": true,
+    "cuffs": true,
+    "cuffCm": 2
+   },
+   "tissu": "piquée 220 Gr/m²",
+   "compo": "50/50"
+  },
+  {
+   "id": "polo_f",
+   "name": "Polo femme Manche Courte",
+   "section": "haut",
+   "icon": "polo_f_mc",
+   "base": "polo_f",
+   "print": {
+    "front": {
+     "wIn": 3.5,
+     "hIn": 3.5,
+     "gTop": 5,
+     "offsetIn": 3.2
+    },
+    "back": {
+     "wIn": 11,
+     "hIn": 12,
+     "gTop": 3.2,
+     "offsetIn": 0
+    },
+    "left": {
+     "wIn": 3.15,
+     "hIn": 3.15,
+     "gTop": 3.9,
+     "offsetIn": 0
+    },
+    "right": {
+     "wIn": 3.15,
+     "hIn": 3.15,
+     "gTop": 3.9,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "7ea33af828364cca84663958d4d29ce2",
+    "name": "FV2 Polo Shirt"
+   },
+   "family": "polo",
+   "familyLabel": "Polo",
+   "gender": "f",
+   "sleeve": "mc",
+   "style": "",
+   "familyIcon": "polo_h_mc",
+   "trims": {
+    "collar": true,
+    "cuffs": true,
+    "cuffCm": 2
+   },
+   "tissu": "Piquée 220 gr/m²",
+   "compo": "50% Polyester 50% Coton"
+  },
+  {
+   "id": "polo_h_ml",
+   "name": "Polo homme manches longues",
+   "section": "haut",
+   "icon": "polo_h_ml",
+   "base": "polo_h_ml",
+   "print": {
+    "front": {
+     "wIn": 4.724,
+     "hIn": 3.15,
+     "gTop": 6.89,
+     "offsetIn": 2.756
+    },
+    "back": {
+     "wIn": 12.598,
+     "hIn": 9.843,
+     "gTop": 4.724,
+     "offsetIn": 0
+    },
+    "left": {
+     "wIn": 3.15,
+     "hIn": 3.15,
+     "gTop": 6.063,
+     "offsetIn": 0.787
+    },
+    "right": {
+     "wIn": 3.15,
+     "hIn": 3.15,
+     "gTop": 3.9,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "polo",
+   "familyLabel": "Polo",
+   "gender": "h",
+   "sleeve": "ml",
+   "style": "",
+   "familyIcon": "polo_h_mc",
+   "trims": {
+    "cuffCm": 6
+   }
+  },
+  {
+   "id": "polo_f_ml",
+   "name": "Polo femme manches longues",
+   "section": "haut",
+   "icon": "polo_f_ml",
+   "base": "polo_f_ml",
+   "print": {
+    "front": {
+     "wIn": 3.5,
+     "hIn": 3.5,
+     "gTop": 5,
+     "offsetIn": 3.2
+    },
+    "back": {
+     "wIn": 11,
+     "hIn": 12,
+     "gTop": 3.2,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "polo",
+   "familyLabel": "Polo",
+   "gender": "f",
+   "sleeve": "ml",
+   "style": "",
+   "familyIcon": "polo_h_mc"
+  },
+  {
+   "id": "tee_h",
+   "name": "T-shirt homme manches courtes",
+   "section": "haut",
+   "icon": "tee_h_mc",
+   "base": "tee_h",
+   "print": {
+    "front": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 5.4,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 3.2,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "6580b3ac7f7d42bdb985aa7d132282e5",
+    "name": "MV2 Basic Crewneck T-Shirt"
+   },
+   "family": "tshirt",
+   "familyLabel": "T-shirt",
+   "gender": "h",
+   "sleeve": "mc",
+   "style": "",
+   "familyIcon": "tee_h_mc"
+  },
+  {
+   "id": "tee_f",
+   "name": "T-shirt femme manches courtes",
+   "section": "haut",
+   "icon": "tee_f_mc",
+   "base": "tee_f",
+   "print": {
+    "front": {
+     "wIn": 10,
+     "hIn": 13,
+     "gTop": 5,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 10,
+     "hIn": 14,
+     "gTop": 3,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "1228354d874c40e189bd366148041759",
+    "name": "FV2 Crewneck T-Shirt"
+   },
+   "family": "tshirt",
+   "familyLabel": "T-shirt",
+   "gender": "f",
+   "sleeve": "mc",
+   "style": "",
+   "familyIcon": "tee_h_mc"
+  },
+  {
+   "id": "tee_h_ml",
+   "name": "T-shirt homme manches longues",
+   "section": "haut",
+   "icon": "tee_h_ml",
+   "base": "tee_h_ml",
+   "print": {
+    "front": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 5.4,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 3.2,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "tshirt",
+   "familyLabel": "T-shirt",
+   "gender": "h",
+   "sleeve": "ml",
+   "style": "",
+   "familyIcon": "tee_h_mc"
+  },
+  {
+   "id": "tee_f_ml",
+   "name": "T-shirt femme manches longues",
+   "section": "haut",
+   "icon": "tee_f_ml",
+   "base": "tee_f_ml",
+   "print": {
+    "front": {
+     "wIn": 10,
+     "hIn": 13,
+     "gTop": 5,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 10,
+     "hIn": 14,
+     "gTop": 3,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "tshirt",
+   "familyLabel": "T-shirt",
+   "gender": "f",
+   "sleeve": "ml",
+   "style": "",
+   "familyIcon": "tee_h_mc"
+  },
+  {
+   "id": "cap",
+   "name": "Casquette",
+   "section": "accessoire",
+   "icon": "cap",
+   "base": "cap",
+   "print": {
+    "front": {
+     "wIn": 4.5,
+     "hIn": 2.2,
+     "gTop": 1.3,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 3,
+     "hIn": 1.2,
+     "gTop": 2.6,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "c2b023d2c3194e2488fc3066b75ed251",
+    "name": "MV2.1 Mid Profile Half curved"
+   },
+   "family": "casquette",
+   "familyLabel": "Casquette",
+   "gender": "",
+   "sleeve": "",
+   "style": "",
+   "familyIcon": "cap"
+  },
+  {
+   "id": "chef",
+   "name": "Veste de chef",
+   "section": "restauration",
+   "icon": "chef",
+   "base": "chef",
+   "print": {
+    "front": {
+     "wIn": 4,
+     "hIn": 3,
+     "gTop": 6,
+     "offsetIn": 3.8
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 10,
+     "gTop": 3.6,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "28fae8247e1d4c578ca9e3554103e994",
+    "name": "MV2 Chef Jacket"
+   },
+   "family": "chef",
+   "familyLabel": "Veste de chef",
+   "gender": "",
+   "sleeve": "",
+   "style": "",
+   "familyIcon": "chef"
+  },
+  {
+   "id": "apron",
+   "name": "Tablier",
+   "section": "restauration",
+   "icon": "apron",
+   "base": "apron",
+   "print": {
+    "front": {
+     "wIn": 9,
+     "hIn": 9,
+     "gTop": 9,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "691b3d0c6e56418ea055cd778eb7d213",
+    "name": "MV2 Utility Apron"
+   },
+   "family": "tablier",
+   "familyLabel": "Tablier",
+   "gender": "",
+   "sleeve": "",
+   "style": "",
+   "familyIcon": "apron"
+  },
+  {
+   "id": "toque",
+   "name": "Toque Chef",
+   "section": "restauration",
+   "icon": "toque",
+   "base": "cap",
+   "print": {
+    "front": {
+     "wIn": 6,
+     "hIn": 1.5,
+     "gTop": 3.7,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "toque",
+   "familyLabel": "Toque",
+   "gender": "",
+   "sleeve": "",
+   "style": "",
+   "familyIcon": "toque"
+  },
+  {
+   "id": "veste_zippe",
+   "name": "VESTE ZIPPE",
+   "section": "haut",
+   "icon": "veste",
+   "base": "tee_h",
+   "print": {
+    "front": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 5.4,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 3.2,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "veste_zippe",
+   "familyLabel": "VESTE ZIPPE",
+   "gender": "",
+   "sleeve": "",
+   "style": "",
+   "familyIcon": "veste"
+  },
+  {
+   "id": "sweat",
+   "name": "Sweat col rond",
+   "section": "haut",
+   "icon": "sweat",
+   "base": "sweat",
+   "print": {
+    "front": {
+     "wIn": 12,
+     "hIn": 12,
+     "gTop": 5,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 15,
+     "gTop": 3.6,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "sweat",
+   "familyLabel": "Sweat",
+   "gender": "",
+   "sleeve": "",
+   "style": "Sans capuche",
+   "familyIcon": "sweat"
+  },
+  {
+   "id": "hoodie",
+   "name": "Sweat à capuche",
+   "section": "haut",
+   "icon": "hoodie",
+   "base": "hoodie",
+   "print": {
+    "front": {
+     "wIn": 12,
+     "hIn": 9,
+     "gTop": 6,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 12,
+     "gTop": 9,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "sweat",
+   "familyLabel": "Sweat",
+   "gender": "",
+   "sleeve": "",
+   "style": "Avec capuche",
+   "familyIcon": "sweat"
+  },
+  {
+   "id": "veste",
+   "name": "Veste zippée",
+   "section": "haut",
+   "icon": "veste",
+   "base": "veste",
+   "print": {
+    "front": {
+     "wIn": 4,
+     "hIn": 4,
+     "gTop": 5.6,
+     "offsetIn": 4.2
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 12,
+     "gTop": 9,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "veste",
+   "familyLabel": "Veste",
+   "gender": "",
+   "sleeve": "",
+   "style": "",
+   "familyIcon": "veste"
+  },
+  {
+   "id": "gilet",
+   "name": "Gilet sans manches",
+   "section": "haut",
+   "icon": "gilet",
+   "base": "veste",
+   "print": {
+    "front": {
+     "wIn": 4,
+     "hIn": 4,
+     "gTop": 5.6,
+     "offsetIn": 4.2
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 12,
+     "gTop": 6,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "gilet",
+   "familyLabel": "Gilet",
+   "gender": "h",
+   "sleeve": "",
+   "style": "",
+   "familyIcon": "gilet"
+  },
+  {
+   "id": "bermuda_safari",
+   "name": "Bermuda Safari",
+   "section": "bas",
+   "icon": "bermuda",
+   "base": "bermuda",
+   "print": {
+    "front": {
+     "wIn": 4,
+     "hIn": 4,
+     "gTop": 5,
+     "offsetIn": 4.2
+    },
+    "back": {
+     "wIn": 6,
+     "hIn": 3.5,
+     "gTop": 2.5,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "bermuda_safari",
+   "familyLabel": "Bermuda Safari",
+   "gender": "",
+   "sleeve": "",
+   "style": "",
+   "familyIcon": "bermuda"
+  },
+  {
+   "id": "bermuda",
+   "name": "Bermuda",
+   "section": "bas",
+   "icon": "bermuda",
+   "base": "bermuda",
+   "print": {
+    "front": {
+     "wIn": 4,
+     "hIn": 4,
+     "gTop": 5,
+     "offsetIn": 4.2
+    },
+    "back": {
+     "wIn": 6,
+     "hIn": 3.5,
+     "gTop": 2.5,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "bermuda",
+   "familyLabel": "Bermuda",
+   "gender": "",
+   "sleeve": "",
+   "style": "",
+   "familyIcon": "bermuda"
+  }
+ ],
+ "shop": {
+  "articles": {
+   "polo_h_copie": {
+    "name": "Polo homme Manche Courte",
+    "price": 38.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 38.99,
+     "S": 38.99,
+     "M": 38.99,
+     "L": 38.99,
+     "XL": 38.99,
+     "XXL": 38.99,
+     "3XL": 41.99
+    }
+   },
+   "polo_f": {
+    "name": "Polo femme Manche Courte",
+    "price": 38.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL"
+    ],
+    "sp": {
+     "XS": 38.99,
+     "S": 38.99,
+     "M": 38.99,
+     "L": 38.99,
+     "XL": 38.99,
+     "XXL": 41.99
+    }
+   },
+   "polo_h_ml": {
+    "name": "Polo homme manches longues",
+    "price": 41.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 41.99,
+     "S": 41.99,
+     "M": 41.99,
+     "L": 41.99,
+     "XL": 41.99,
+     "XXL": 44.99,
+     "3XL": 44.99
+    }
+   },
+   "polo_f_ml": {
+    "name": "Polo femme manches longues",
+    "price": 41.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL"
+    ],
+    "sp": {
+     "XS": 41.99,
+     "S": 41.99,
+     "M": 41.99,
+     "L": 41.99,
+     "XL": 41.99,
+     "XXL": 44.99
+    }
+   },
+   "tee_h": {
+    "name": "T-shirt homme manches courtes",
+    "price": 21.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 21.99,
+     "S": 21.99,
+     "M": 21.99,
+     "L": 21.99,
+     "XL": 21.99,
+     "XXL": 23.99,
+     "3XL": 23.99
+    }
+   },
+   "tee_f": {
+    "name": "T-shirt femme manches courtes",
+    "price": 21.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL"
+    ],
+    "sp": {
+     "XS": 21.99,
+     "S": 21.99,
+     "M": 21.99,
+     "L": 21.99,
+     "XL": 21.99,
+     "XXL": 23.99
+    }
+   },
+   "tee_h_ml": {
+    "name": "T-shirt homme manches longues",
+    "price": 23.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 23.99,
+     "S": 23.99,
+     "M": 23.99,
+     "L": 23.99,
+     "XL": 23.99,
+     "XXL": 25.99,
+     "3XL": 25.99
+    }
+   },
+   "tee_f_ml": {
+    "name": "T-shirt femme manches longues",
+    "price": 23.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL"
+    ],
+    "sp": {
+     "XS": 23.99,
+     "S": 23.99,
+     "M": 23.99,
+     "L": 23.99,
+     "XL": 23.99,
+     "XXL": 25.99
+    }
+   },
+   "cap": {
+    "name": "Casquette",
+    "price": 18.6,
+    "sizes": [
+     "Taille unique"
+    ],
+    "sp": {
+     "Taille unique": 18.6
+    }
+   },
+   "chef": {
+    "name": "Veste de chef",
+    "price": 45.99,
+    "sizes": [
+     "36",
+     "38",
+     "40",
+     "42",
+     "44",
+     "46",
+     "48",
+     "50"
+    ],
+    "sp": {
+     "36": 45.99,
+     "38": 45.99,
+     "40": 45.99,
+     "42": 45.99,
+     "44": 45.99,
+     "46": 45.99,
+     "48": 45.99,
+     "50": 45.99
+    }
+   },
+   "apron": {
+    "name": "Tablier",
+    "price": 26.99,
+    "sizes": [
+     "Taille unique"
+    ],
+    "sp": {
+     "Taille unique": 26.99
+    }
+   },
+   "toque": {
+    "name": "Toque Chef",
+    "price": 21.99,
+    "sizes": [
+     "36",
+     "38",
+     "40",
+     "42",
+     "44",
+     "46",
+     "48",
+     "50"
+    ],
+    "sp": {
+     "36": 21.99,
+     "38": 21.99,
+     "40": 21.99,
+     "42": 21.99,
+     "44": 21.99,
+     "46": 21.99,
+     "48": 21.99,
+     "50": 21.99
+    }
+   },
+   "veste_zippe": {
+    "name": "VESTE ZIPPE",
+    "price": 56.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 56.99,
+     "S": 56.99,
+     "M": 56.99,
+     "L": 56.99,
+     "XL": 56.99,
+     "XXL": 59.99,
+     "3XL": 59.99
+    }
+   },
+   "sweat": {
+    "name": "Sweat col rond",
+    "price": 46.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 46.99,
+     "S": 46.99,
+     "M": 46.99,
+     "L": 46.99,
+     "XL": 46.99,
+     "XXL": 49.99,
+     "3XL": 49.99
+    }
+   },
+   "hoodie": {
+    "name": "Sweat à capuche",
+    "price": 55,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 55,
+     "S": 55,
+     "M": 55,
+     "L": 55,
+     "XL": 55,
+     "XXL": 58,
+     "3XL": 58
+    }
+   },
+   "veste": {
+    "name": "Veste zippée",
+    "price": 56.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 56.99,
+     "S": 56.99,
+     "M": 56.99,
+     "L": 56.99,
+     "XL": 56.99,
+     "XXL": 59.99,
+     "3XL": 59.99
+    }
+   },
+   "gilet": {
+    "name": "Gilet sans manches",
+    "price": 51.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 51.99,
+     "S": 51.99,
+     "M": 51.99,
+     "L": 51.99,
+     "XL": 51.99,
+     "XXL": 53.99,
+     "3XL": 53.99
+    }
+   },
+   "bermuda_safari": {
+    "name": "Bermuda Safari",
+    "price": 52.99,
+    "sizes": [
+     "36",
+     "38",
+     "40",
+     "42",
+     "44",
+     "46",
+     "48",
+     "50"
+    ],
+    "sp": {
+     "36": 52.99,
+     "38": 52.99,
+     "40": 52.99,
+     "42": 52.99,
+     "44": 52.99,
+     "46": 52.99,
+     "48": 52.99,
+     "50": 52.99
+    }
+   },
+   "bermuda": {
+    "name": "Bermuda",
+    "price": 38.99,
+    "sizes": [
+     "36",
+     "38",
+     "40",
+     "42",
+     "44",
+     "46",
+     "48",
+     "50"
+    ],
+    "sp": {
+     "36": 38.99,
+     "38": 38.99,
+     "40": 38.99,
+     "42": 38.99,
+     "44": 38.99,
+     "46": 38.99,
+     "48": 38.99,
+     "50": 38.99
+    }
+   }
+  },
+  "colors": [
+   [
+    "Blanc",
+    "#ffffff"
+   ],
+   [
+    "Noir",
+    "#161616"
+   ],
+   [
+    "Bleu marine",
+    "#1d2b4f"
+   ],
+   [
+    "Bleu Vethypro",
+    "#29669d"
+   ],
+   [
+    "Bleu roi",
+    "#2b55b8"
+   ],
+   [
+    "Bleu clair",
+    "#9cc3e6"
+   ],
+   [
+    "Gris",
+    "#a7a9ab"
+   ],
+   [
+    "Rouge",
+    "#c43c2c"
+   ],
+   [
+    "Bordeaux",
+    "#5f1f2a"
+   ],
+   [
+    "Vert forêt",
+    "#2f4a36"
+   ],
+   [
+    "Beige",
+    "#d9c8a9"
+   ],
+   [
+    "Orange",
+    "#e9772f"
+   ]
+  ],
+  "printPrice": 4,
+  "embSetup": 10,
+  "embPiece": 0.5,
+  "cartCount": 0,
+  "surcharge": [],
+  "minQty": 1,
+  "money": {
+   "sym": "د.ت",
+   "pos": "left_space",
+   "dec": 3,
+   "ds": ",",
+   "ts": "."
+  },
+  "trimColors": {
+   "collar": [
+    [
+     "Blanc",
+     "#ffffff"
+    ],
+    [
+     "Noir",
+     "#161616"
+    ],
+    [
+     "Bleu marine",
+     "#1d2b4f"
+    ],
+    [
+     "Bleu Vethypro",
+     "#29669d"
+    ],
+    [
+     "Bleu roi",
+     "#2b55b8"
+    ],
+    [
+     "Bleu clair",
+     "#9cc3e6"
+    ],
+    [
+     "Gris",
+     "#a7a9ab"
+    ],
+    [
+     "Rouge",
+     "#c43c2c"
+    ],
+    [
+     "Bordeaux",
+     "#5f1f2a"
+    ],
+    [
+     "Vert forêt",
+     "#2f4a36"
+    ],
+    [
+     "Beige",
+     "#d9c8a9"
+    ],
+    [
+     "Orange",
+     "#e9772f"
+    ]
+   ],
+   "cuffs": [
+    [
+     "Blanc",
+     "#ffffff"
+    ],
+    [
+     "Noir",
+     "#161616"
+    ],
+    [
+     "Bleu marine",
+     "#1d2b4f"
+    ],
+    [
+     "Bleu Vethypro",
+     "#29669d"
+    ],
+    [
+     "Bleu roi",
+     "#2b55b8"
+    ],
+    [
+     "Bleu clair",
+     "#9cc3e6"
+    ],
+    [
+     "Gris",
+     "#a7a9ab"
+    ],
+    [
+     "Rouge",
+     "#c43c2c"
+    ],
+    [
+     "Bordeaux",
+     "#5f1f2a"
+    ],
+    [
+     "Vert forêt",
+     "#2f4a36"
+    ],
+    [
+     "Beige",
+     "#d9c8a9"
+    ],
+    [
+     "Orange",
+     "#e9772f"
+    ]
+   ]
+  }
+ },
+ "atelier": {
+  "printBox": "serigraphie",
+  "service": ""
+ },
+ "sections": [
+  {
+   "key": "haut",
+   "label": "Hauts",
+   "base": "tee_h"
+  },
+  {
+   "key": "bas",
+   "label": "Bas",
+   "base": "bermuda"
+  },
+  {
+   "key": "accessoire",
+   "label": "Accessoires",
+   "base": "cap"
+  },
+  {
+   "key": "restauration",
+   "label": "Restauration",
+   "base": "chef"
+  }
+ ],
+ "families": [
+  {
+   "key": "polo",
+   "section": "haut",
+   "label": "Polo",
+   "icon": "polo_h_mc"
+  },
+  {
+   "key": "tshirt",
+   "section": "haut",
+   "label": "T-shirt",
+   "icon": "tee_h_mc"
+  },
+  {
+   "key": "casquette",
+   "section": "accessoire",
+   "label": "Casquette",
+   "icon": "cap"
+  },
+  {
+   "key": "chef",
+   "section": "restauration",
+   "label": "Veste de chef",
+   "icon": "chef"
+  },
+  {
+   "key": "tablier",
+   "section": "restauration",
+   "label": "Tablier",
+   "icon": "apron"
+  },
+  {
+   "key": "toque",
+   "section": "restauration",
+   "label": "Toque",
+   "icon": "toque"
+  },
+  {
+   "key": "veste_zippe",
+   "section": "haut",
+   "label": "VESTE ZIPPE",
+   "icon": "veste"
+  },
+  {
+   "key": "sweat",
+   "section": "haut",
+   "label": "Sweat",
+   "icon": "sweat"
+  },
+  {
+   "key": "veste",
+   "section": "haut",
+   "label": "Veste",
+   "icon": "veste"
+  },
+  {
+   "key": "gilet",
+   "section": "haut",
+   "label": "Gilet",
+   "icon": "gilet"
+  },
+  {
+   "key": "bermuda_safari",
+   "section": "bas",
+   "label": "Bermuda Safari",
+   "icon": "bermuda"
+  },
+  {
+   "key": "bermuda",
+   "section": "bas",
+   "label": "Bermuda",
+   "icon": "bermuda"
+  }
+ ],
+ "staff": [
+  "JARDIN",
+  "RECEPTION",
+  "HOUSEKEEPING",
+  "ADMINISTRATION",
+  "ANIMATION",
+  "LINGERIE",
+  "CUISINE",
+  "F&B"
+ ],
+ "company": {
+  "name": "DIGITAL-TEX S.A.",
+  "address": "2 rue thouraya",
+  "city": "4180",
+  "phone": "+216 75 623 791",
+  "email": "zinefendi@digital-tex-tunisie.com",
+  "web": "www.digital-tex-tunisie.com",
+  "mf": "1062705C/A/M/000",
+  "rc": "",
+  "bank": "ATB",
+  "rib": "",
+  "logo": "data:image/jpeg;base64,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"
+ },
+ "gestion": {
+  "orderPrefix": "CMD",
+  "blPrefix": "BL",
+  "invoicePrefix": "FAC",
+  "receiptPrefix": "REC",
+  "tva": 19,
+  "timbre": 1,
+  "pricesTTC": true,
+  "dueDays": 30,
+  "paymentModes": [
+   "Espèces",
+   "Chèque",
+   "Virement",
+   "Carte bancaire",
+   "Traite"
+  ],
+  "invoiceNote": "",
+  "showAdvanceOnSheet": true
+ }
+}

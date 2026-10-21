@@ -1,0 +1,1116 @@
+{
+ "mode": "wp",
+ "brand": "Uniform Studio 3D",
+ "startGarment": "polo_h_ml",
+ "startColor": "#161616",
+ "loggedIn": false,
+ "isPro": false,
+ "watermark": true,
+ "aiEnabled": false,
+ "credits": null,
+ "shopEnabled": true,
+ "watermarkText": "VETHYPRO",
+ "wmView": false,
+ "passPrice": "20 DT",
+ "pass": null,
+ "models": {
+  "chef": {
+   "url": "models/chef.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "cap": {
+   "url": "models/cap.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "polo_f": {
+   "url": "models/polo_f.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "bermuda_safari": {
+   "url": "models/bermuda_safari.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "tee_h": {
+   "url": "models/tee_h.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "apron": {
+   "url": "models/apron.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "tee_f": {
+   "url": "models/tee_f.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "veste_zippe": {
+   "url": "models/veste_zippe.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "toque": {
+   "url": "models/toque.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "gilet": {
+   "url": "models/gilet.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  },
+  "polo_h_ml": {
+   "url": "models/polo_h_ml.glb",
+   "rot": 0,
+   "dy": 0,
+   "scale": 1,
+   "originalColors": false
+  }
+ },
+ "catalog": [
+  {
+   "id": "polo_h_copie",
+   "name": "Polo homme Manche Courte",
+   "section": "haut",
+   "icon": "polo_h",
+   "base": "polo_h",
+   "print": {
+    "front": {
+     "wIn": 4,
+     "hIn": 4,
+     "gTop": 5.2,
+     "offsetIn": 3.6
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 14,
+     "gTop": 3.4,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "15fbcad9d5394559ab6b83a7180f11ec",
+    "name": "MV2 Polo Shirt"
+   },
+   "family": "polo",
+   "familyLabel": "Polo",
+   "gender": "",
+   "sleeve": "",
+   "style": ""
+  },
+  {
+   "id": "polo_f",
+   "name": "Polo femme Manche Courte",
+   "section": "haut",
+   "icon": "polo_f_mc",
+   "base": "polo_f",
+   "print": {
+    "front": {
+     "wIn": 3.5,
+     "hIn": 3.5,
+     "gTop": 5,
+     "offsetIn": 3.2
+    },
+    "back": {
+     "wIn": 11,
+     "hIn": 12,
+     "gTop": 3.2,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "7ea33af828364cca84663958d4d29ce2",
+    "name": "FV2 Polo Shirt"
+   },
+   "family": "polo",
+   "familyLabel": "Polo",
+   "gender": "f",
+   "sleeve": "mc",
+   "style": ""
+  },
+  {
+   "id": "polo_h_ml",
+   "name": "Polo homme manches longues",
+   "section": "haut",
+   "icon": "polo_h_ml",
+   "base": "polo_h_ml",
+   "print": {
+    "front": {
+     "wIn": 4.724,
+     "hIn": 2.756,
+     "gTop": 5.906,
+     "offsetIn": 3.543
+    },
+    "back": {
+     "wIn": 12.598,
+     "hIn": 9.843,
+     "gTop": 4.724,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "polo",
+   "familyLabel": "Polo",
+   "gender": "h",
+   "sleeve": "ml",
+   "style": ""
+  },
+  {
+   "id": "polo_f_ml",
+   "name": "Polo femme manches longues",
+   "section": "haut",
+   "icon": "polo_f_ml",
+   "base": "polo_f_ml",
+   "print": {
+    "front": {
+     "wIn": 3.5,
+     "hIn": 3.5,
+     "gTop": 5,
+     "offsetIn": 3.2
+    },
+    "back": {
+     "wIn": 11,
+     "hIn": 12,
+     "gTop": 3.2,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "polo",
+   "familyLabel": "Polo",
+   "gender": "f",
+   "sleeve": "ml",
+   "style": ""
+  },
+  {
+   "id": "tee_h",
+   "name": "T-shirt homme manches courtes",
+   "section": "haut",
+   "icon": "tee_h_mc",
+   "base": "tee_h",
+   "print": {
+    "front": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 5.4,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 3.2,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "6580b3ac7f7d42bdb985aa7d132282e5",
+    "name": "MV2 Basic Crewneck T-Shirt"
+   },
+   "family": "tshirt",
+   "familyLabel": "T-shirt",
+   "gender": "h",
+   "sleeve": "mc",
+   "style": ""
+  },
+  {
+   "id": "tee_f",
+   "name": "T-shirt femme manches courtes",
+   "section": "haut",
+   "icon": "tee_f_mc",
+   "base": "tee_f",
+   "print": {
+    "front": {
+     "wIn": 10,
+     "hIn": 13,
+     "gTop": 5,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 10,
+     "hIn": 14,
+     "gTop": 3,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "1228354d874c40e189bd366148041759",
+    "name": "FV2 Crewneck T-Shirt"
+   },
+   "family": "tshirt",
+   "familyLabel": "T-shirt",
+   "gender": "f",
+   "sleeve": "mc",
+   "style": ""
+  },
+  {
+   "id": "tee_h_ml",
+   "name": "T-shirt homme manches longues",
+   "section": "haut",
+   "icon": "tee_h_ml",
+   "base": "tee_h_ml",
+   "print": {
+    "front": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 5.4,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 3.2,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "tshirt",
+   "familyLabel": "T-shirt",
+   "gender": "h",
+   "sleeve": "ml",
+   "style": ""
+  },
+  {
+   "id": "tee_f_ml",
+   "name": "T-shirt femme manches longues",
+   "section": "haut",
+   "icon": "tee_f_ml",
+   "base": "tee_f_ml",
+   "print": {
+    "front": {
+     "wIn": 10,
+     "hIn": 13,
+     "gTop": 5,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 10,
+     "hIn": 14,
+     "gTop": 3,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "tshirt",
+   "familyLabel": "T-shirt",
+   "gender": "f",
+   "sleeve": "ml",
+   "style": ""
+  },
+  {
+   "id": "cap",
+   "name": "Casquette",
+   "section": "accessoire",
+   "icon": "cap",
+   "base": "cap",
+   "print": {
+    "front": {
+     "wIn": 4.5,
+     "hIn": 2.2,
+     "gTop": 1.3,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 3,
+     "hIn": 1.2,
+     "gTop": 2.6,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "c2b023d2c3194e2488fc3066b75ed251",
+    "name": "MV2.1 Mid Profile Half curved"
+   },
+   "family": "casquette",
+   "familyLabel": "Casquette",
+   "gender": "",
+   "sleeve": "",
+   "style": ""
+  },
+  {
+   "id": "chef",
+   "name": "Veste de chef",
+   "section": "restauration",
+   "icon": "chef",
+   "base": "chef",
+   "print": {
+    "front": {
+     "wIn": 4,
+     "hIn": 3,
+     "gTop": 6,
+     "offsetIn": 3.8
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 10,
+     "gTop": 3.6,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "28fae8247e1d4c578ca9e3554103e994",
+    "name": "MV2 Chef Jacket"
+   },
+   "family": "chef",
+   "familyLabel": "Veste de chef",
+   "gender": "",
+   "sleeve": "",
+   "style": ""
+  },
+  {
+   "id": "apron",
+   "name": "Tablier",
+   "section": "restauration",
+   "icon": "apron",
+   "base": "apron",
+   "print": {
+    "front": {
+     "wIn": 9,
+     "hIn": 9,
+     "gTop": 9,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "691b3d0c6e56418ea055cd778eb7d213",
+    "name": "MV2 Utility Apron"
+   },
+   "family": "tablier",
+   "familyLabel": "Tablier",
+   "gender": "",
+   "sleeve": "",
+   "style": ""
+  },
+  {
+   "id": "toque",
+   "name": "Toque Chef",
+   "section": "restauration",
+   "icon": "toque",
+   "base": "cap",
+   "print": {
+    "front": {
+     "wIn": 6,
+     "hIn": 1.5,
+     "gTop": 3.7,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "toque",
+   "familyLabel": "Toque",
+   "gender": "",
+   "sleeve": "",
+   "style": ""
+  },
+  {
+   "id": "veste_zippe",
+   "name": "VESTE ZIPPE",
+   "section": "haut",
+   "icon": "veste",
+   "base": "tee_h",
+   "print": {
+    "front": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 5.4,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 16,
+     "gTop": 3.2,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "veste_zippe",
+   "familyLabel": "VESTE ZIPPE",
+   "gender": "",
+   "sleeve": "",
+   "style": ""
+  },
+  {
+   "id": "sweat",
+   "name": "Sweat col rond",
+   "section": "haut",
+   "icon": "sweat",
+   "base": "sweat",
+   "print": {
+    "front": {
+     "wIn": 12,
+     "hIn": 12,
+     "gTop": 5,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 15,
+     "gTop": 3.6,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "sweat",
+   "familyLabel": "Sweat",
+   "gender": "",
+   "sleeve": "",
+   "style": "Sans capuche"
+  },
+  {
+   "id": "hoodie",
+   "name": "Sweat à capuche",
+   "section": "haut",
+   "icon": "hoodie",
+   "base": "hoodie",
+   "print": {
+    "front": {
+     "wIn": 12,
+     "hIn": 9,
+     "gTop": 6,
+     "offsetIn": 0
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 12,
+     "gTop": 9,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "sweat",
+   "familyLabel": "Sweat",
+   "gender": "",
+   "sleeve": "",
+   "style": "Avec capuche"
+  },
+  {
+   "id": "veste",
+   "name": "Veste zippée",
+   "section": "haut",
+   "icon": "veste",
+   "base": "veste",
+   "print": {
+    "front": {
+     "wIn": 4,
+     "hIn": 4,
+     "gTop": 5.6,
+     "offsetIn": 4.2
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 12,
+     "gTop": 9,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "veste",
+   "familyLabel": "Veste",
+   "gender": "",
+   "sleeve": "",
+   "style": ""
+  },
+  {
+   "id": "gilet",
+   "name": "Gilet sans manches",
+   "section": "haut",
+   "icon": "gilet",
+   "base": "veste",
+   "print": {
+    "front": {
+     "wIn": 4,
+     "hIn": 4,
+     "gTop": 5.6,
+     "offsetIn": 4.2
+    },
+    "back": {
+     "wIn": 12,
+     "hIn": 12,
+     "gTop": 6,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "gilet",
+   "familyLabel": "Gilet",
+   "gender": "h",
+   "sleeve": "",
+   "style": ""
+  },
+  {
+   "id": "bermuda_safari",
+   "name": "Bermuda Safari",
+   "section": "bas",
+   "icon": "bermuda",
+   "base": "bermuda",
+   "print": {
+    "front": {
+     "wIn": 4,
+     "hIn": 4,
+     "gTop": 5,
+     "offsetIn": 4.2
+    },
+    "back": {
+     "wIn": 6,
+     "hIn": 3.5,
+     "gTop": 2.5,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "bermuda_safari",
+   "familyLabel": "Bermuda Safari",
+   "gender": "",
+   "sleeve": "",
+   "style": ""
+  },
+  {
+   "id": "bermuda",
+   "name": "Bermuda",
+   "section": "bas",
+   "icon": "bermuda",
+   "base": "bermuda",
+   "print": {
+    "front": {
+     "wIn": 4,
+     "hIn": 4,
+     "gTop": 5,
+     "offsetIn": 4.2
+    },
+    "back": {
+     "wIn": 6,
+     "hIn": 3.5,
+     "gTop": 2.5,
+     "offsetIn": 0
+    }
+   },
+   "clo": {
+    "id": "",
+    "name": ""
+   },
+   "family": "bermuda",
+   "familyLabel": "Bermuda",
+   "gender": "",
+   "sleeve": "",
+   "style": ""
+  }
+ ],
+ "shop": {
+  "articles": {
+   "polo_h_copie": {
+    "name": "Polo homme Manche Courte personnalisé",
+    "price": 38.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 38.99,
+     "S": 38.99,
+     "M": 38.99,
+     "L": 38.99,
+     "XL": 38.99,
+     "XXL": 38.99,
+     "3XL": 41.99
+    }
+   },
+   "polo_f": {
+    "name": "Polo femme personnalisé",
+    "price": 38.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL"
+    ],
+    "sp": {
+     "XS": 38.99,
+     "S": 38.99,
+     "M": 38.99,
+     "L": 38.99,
+     "XL": 38.99,
+     "XXL": 41.99
+    }
+   },
+   "polo_h_ml": {
+    "name": "Polo homme manches longues personnalisé",
+    "price": 41.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 41.99,
+     "S": 41.99,
+     "M": 41.99,
+     "L": 41.99,
+     "XL": 41.99,
+     "XXL": 44.99,
+     "3XL": 44.99
+    }
+   },
+   "polo_f_ml": {
+    "name": "Polo femme manches longues personnalisé",
+    "price": 41.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL"
+    ],
+    "sp": {
+     "XS": 41.99,
+     "S": 41.99,
+     "M": 41.99,
+     "L": 41.99,
+     "XL": 41.99,
+     "XXL": 44.99
+    }
+   },
+   "tee_h": {
+    "name": "T-shirt homme personnalisé",
+    "price": 21.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 21.99,
+     "S": 21.99,
+     "M": 21.99,
+     "L": 21.99,
+     "XL": 21.99,
+     "XXL": 23.99,
+     "3XL": 23.99
+    }
+   },
+   "tee_f": {
+    "name": "T-shirt femme personnalisé",
+    "price": 21.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL"
+    ],
+    "sp": {
+     "XS": 21.99,
+     "S": 21.99,
+     "M": 21.99,
+     "L": 21.99,
+     "XL": 21.99,
+     "XXL": 23.99
+    }
+   },
+   "tee_h_ml": {
+    "name": "T-shirt homme manches longues personnalisé",
+    "price": 23.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 23.99,
+     "S": 23.99,
+     "M": 23.99,
+     "L": 23.99,
+     "XL": 23.99,
+     "XXL": 25.99,
+     "3XL": 25.99
+    }
+   },
+   "tee_f_ml": {
+    "name": "T-shirt femme manches longues personnalisé",
+    "price": 23.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL"
+    ],
+    "sp": {
+     "XS": 23.99,
+     "S": 23.99,
+     "M": 23.99,
+     "L": 23.99,
+     "XL": 23.99,
+     "XXL": 25.99
+    }
+   },
+   "cap": {
+    "name": "Casquette personnalisé",
+    "price": 18.6,
+    "sizes": [
+     "Taille unique"
+    ],
+    "sp": {
+     "Taille unique": 18.6
+    }
+   },
+   "chef": {
+    "name": "Veste de cuisine personnalisé",
+    "price": 45.99,
+    "sizes": [
+     "36",
+     "38",
+     "40",
+     "42",
+     "44",
+     "46",
+     "48",
+     "50"
+    ],
+    "sp": {
+     "36": 45.99,
+     "38": 45.99,
+     "40": 45.99,
+     "42": 45.99,
+     "44": 45.99,
+     "46": 45.99,
+     "48": 45.99,
+     "50": 45.99
+    }
+   },
+   "apron": {
+    "name": "Tablier de cuisine personnalisé",
+    "price": 26.99,
+    "sizes": [
+     "Taille unique"
+    ],
+    "sp": {
+     "Taille unique": 26.99
+    }
+   },
+   "toque": {
+    "name": "Toque Chef personnalisé",
+    "price": 21.99,
+    "sizes": [
+     "36",
+     "38",
+     "40",
+     "42",
+     "44",
+     "46",
+     "48",
+     "50"
+    ],
+    "sp": {
+     "36": 21.99,
+     "38": 21.99,
+     "40": 21.99,
+     "42": 21.99,
+     "44": 21.99,
+     "46": 21.99,
+     "48": 21.99,
+     "50": 21.99
+    }
+   },
+   "veste_zippe": {
+    "name": "VESTE ZIPPE personnalisé",
+    "price": 56.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 56.99,
+     "S": 56.99,
+     "M": 56.99,
+     "L": 56.99,
+     "XL": 56.99,
+     "XXL": 59.99,
+     "3XL": 59.99
+    }
+   },
+   "sweat": {
+    "name": "Sweat col rond personnalisé",
+    "price": 46.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 46.99,
+     "S": 46.99,
+     "M": 46.99,
+     "L": 46.99,
+     "XL": 46.99,
+     "XXL": 49.99,
+     "3XL": 49.99
+    }
+   },
+   "hoodie": {
+    "name": "Sweat à capuche personnalisé",
+    "price": 55,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 55,
+     "S": 55,
+     "M": 55,
+     "L": 55,
+     "XL": 55,
+     "XXL": 58,
+     "3XL": 58
+    }
+   },
+   "veste": {
+    "name": "Veste zippée personnalisé",
+    "price": 56.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 56.99,
+     "S": 56.99,
+     "M": 56.99,
+     "L": 56.99,
+     "XL": 56.99,
+     "XXL": 59.99,
+     "3XL": 59.99
+    }
+   },
+   "gilet": {
+    "name": "Gilet sans manches personnalisé",
+    "price": 51.99,
+    "sizes": [
+     "XS",
+     "S",
+     "M",
+     "L",
+     "XL",
+     "XXL",
+     "3XL"
+    ],
+    "sp": {
+     "XS": 51.99,
+     "S": 51.99,
+     "M": 51.99,
+     "L": 51.99,
+     "XL": 51.99,
+     "XXL": 53.99,
+     "3XL": 53.99
+    }
+   },
+   "bermuda_safari": {
+    "name": "Bermuda Safari personnalisé",
+    "price": 52.99,
+    "sizes": [
+     "36",
+     "38",
+     "40",
+     "42",
+     "44",
+     "46",
+     "48",
+     "50"
+    ],
+    "sp": {
+     "36": 52.99,
+     "38": 52.99,
+     "40": 52.99,
+     "42": 52.99,
+     "44": 52.99,
+     "46": 52.99,
+     "48": 52.99,
+     "50": 52.99
+    }
+   },
+   "bermuda": {
+    "name": "Bermuda personnalisé",
+    "price": 38.99,
+    "sizes": [
+     "36",
+     "38",
+     "40",
+     "42",
+     "44",
+     "46",
+     "48",
+     "50"
+    ],
+    "sp": {
+     "36": 38.99,
+     "38": 38.99,
+     "40": 38.99,
+     "42": 38.99,
+     "44": 38.99,
+     "46": 38.99,
+     "48": 38.99,
+     "50": 38.99
+    }
+   }
+  },
+  "colors": [
+   [
+    "Blanc",
+    "#ffffff"
+   ],
+   [
+    "Noir",
+    "#161616"
+   ],
+   [
+    "Bleu marine",
+    "#1d2b4f"
+   ],
+   [
+    "Bleu Vethypro",
+    "#29669d"
+   ],
+   [
+    "Bleu roi",
+    "#2b55b8"
+   ],
+   [
+    "Bleu clair",
+    "#9cc3e6"
+   ],
+   [
+    "Gris",
+    "#a7a9ab"
+   ],
+   [
+    "Rouge",
+    "#c43c2c"
+   ],
+   [
+    "Bordeaux",
+    "#5f1f2a"
+   ],
+   [
+    "Vert forêt",
+    "#2f4a36"
+   ],
+   [
+    "Beige",
+    "#d9c8a9"
+   ],
+   [
+    "Orange",
+    "#e9772f"
+   ]
+  ],
+  "printPrice": 4,
+  "embSetup": 10,
+  "embPiece": 0.5,
+  "cartCount": 0,
+  "surcharge": [],
+  "minQty": 1,
+  "money": {
+   "sym": "د.ت",
+   "pos": "left_space",
+   "dec": 3,
+   "ds": ",",
+   "ts": "."
+  }
+ }
+}
