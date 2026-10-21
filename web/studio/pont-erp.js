@@ -95,6 +95,8 @@
       open: async () => ({ ok: false }),
       folder: async () => { alert('Dans l’ERP web, les PDF s’ouvrent dans un nouvel onglet ou se téléchargent dans votre dossier Téléchargements.'); return true; },
     },
+    // ERP 0.7.0 : articles et prestations hors Studio (sans prix pour les comptes sans le droit « prix »)
+    articles: () => api('GET', '/commercial/articles'),
     openWindow: async (page) => { post('ouvrir', { page }); return true; },
     notify: async (ch, data) => { post('notify', { ch, data }); return true; },
     _rafraichir: async () => { try { await charger(); ecouteurs.forEach((f) => f()); } catch (_) { /* */ } },

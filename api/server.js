@@ -49,6 +49,7 @@ function construire(opts = {}) {
   app.register(require('./lib/routes-roles'));
   app.register(require('./lib/routes-parametres'));
   app.register(require('./lib/routes-metier'));
+  app.register(require('./lib/routes-compta'));
   return app;
 }
 

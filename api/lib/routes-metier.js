@@ -47,8 +47,8 @@ async function lireCatalogue(db) {
 // (module 10), pas du catalogue. Le studio et la Gestion 3.3.0 les lisent ici sans modification.
 async function avecParametres(db, donnees) {
   const c = structuredClone(donnees);
-  const s = (await db.query('select nom, adresse, ville, telephone, email, web, mf, rc, banque, rib, logo from parametres.societe where id = 1')).rows[0];
-  if (s) c.company = { name: s.nom, address: s.adresse, city: s.ville, phone: s.telephone, email: s.email, web: s.web, mf: s.mf, rc: s.rc, bank: s.banque, rib: s.rib, logo: s.logo };
+  const s = (await db.query('select nom, adresse, ville, telephone, email, web, mf, rc, banque, rib, logo, mentions from parametres.societe where id = 1')).rows[0];
+  if (s) c.company = { name: s.nom, address: s.adresse, city: s.ville, phone: s.telephone, email: s.email, web: s.web, mf: s.mf, rc: s.rc, bank: s.banque, rib: s.rib, logo: s.logo, mentions: s.mentions };
   const f = (await db.query(`select distinct on (code) code, valeur::float8 as v from parametres.fiscalite
       where en_vigueur_le <= current_date order by code, en_vigueur_le desc`)).rows;
   const fv = Object.fromEntries(f.map((x) => [x.code, x.v]));
@@ -174,6 +174,11 @@ module.exports = async function routesMetier(app) {
         const cat = await lireCatalogue(c);
         try { rec = P.fusionnerCommande(rec, avant, cat?.donnees); } catch (e) { if (e instanceof P.ErreurPrix) return erreur(reply, 400, e.code, e.message); throw e; }
       }
+      // 0.7.0 : même contrôle de doublon pour le chemin commercial (avec prix) — un numéro de commande ne sert qu'une fois
+      if (!sansPrix && col === 'orders' && rec.number && (!avant || avant.number !== rec.number)) {
+        await c.query('select pg_advisory_xact_lock(727002, hashtext($1))', [String(rec.number)]);
+        if ((await c.query(`select 1 from commercial.documents where collection = 'orders' and donnees->>'number' = $1 and id <> $2`, [String(rec.number), rec.id || ''])).rowCount) return erreur(reply, 400, 'numero_pris', 'Ce numéro de commande est déjà utilisé.');
+      }
       if (sansPrix && col === 'clients' && avant) {
         // champs que ce compte ne voit pas (encours, montants) : ceux du serveur, jamais effacés
         rec = { ...rec };
@@ -182,11 +187,16 @@ module.exports = async function routesMetier(app) {
       // règles de la 3.3.0, maintenant contrôlées par le serveur
       if (avant && col === 'invoices') {
         if (avant.status === 'annulee') return erreur(reply, 400, 'facture_annulee', 'Une facture annulée ne se modifie plus.');
+        // les règlements issus d'un encaissement de la comptabilité (lettrage) ne se modifient que depuis la comptabilité
+        const deCompta = (avant.payments || []).filter((p) => p && p.enc);
+        rec = { ...rec, payments: [...(rec.payments || []).filter((p) => p && !p.enc), ...deCompta] };
+        if (rec.status === 'annulee' && deCompta.length) return erreur(reply, 400, 'facture_lettree', 'Cette facture a des encaissements enregistrés en comptabilité : annulez-les d’abord (Comptabilité clients › Encaissements).');
         if (rec.status === 'annulee' && !D.peut(req.droits, 'commercial.factures', 'annuler')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas d’annuler une facture.');
         if (avant.number && rec.number !== avant.number) return erreur(reply, 400, 'numero_fige', 'Le numéro d’une facture ne change pas.');
       }
       if (avant && col === 'orders' && rec.status === 'annulee' && avant.status !== 'annulee' && !D.peut(req.droits, 'commercial.commandes', 'annuler')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas d’annuler une commande.');
       if (col === 'invoices' && !avant && !rec.number) return erreur(reply, 400, 'numero_absent', 'Une facture doit avoir un numéro officiel.');
+      if (col === 'invoices' && !avant) rec = { ...rec, payments: (rec.payments || []).filter((p) => p && !p.enc) };
       rec.id ||= rid();
       rec.updatedAt = new Date().toISOString(); rec.createdAt ||= avant?.createdAt || rec.updatedAt;
       await c.query(`insert into commercial.documents (collection, id, donnees, maj_par) values ($1, $2, $3, $4)

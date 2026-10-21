@@ -157,15 +157,16 @@ module.exports = async function routesParametres(app) {
   // État de chaque module (lot du calendrier) et compteurs utiles — sans montant si non autorisé.
   const LOTS = {
     infographie: { lot: 3, etat: 'Studio 3D et catalogue en réseau · Lookbook au lot 10', actif: true },
-    commercial: { lot: 4, etat: 'Clients, commandes, BL, factures en réseau · devis, proformas, avoirs au lot 4', actif: true },
-    compta_clients: { lot: 8, etat: 'Encours et échéances en service · lettrage et relances au lot 8', actif: true },
-    compta_fournisseurs: { lot: 8, etat: 'Fichier fournisseurs en service · achats et factures au lot 8', actif: true },
+    commercial: { lot: 4, etat: 'Clients, commandes, BL, factures, articles hors Studio · devis, proformas, avoirs au lot 4', actif: true },
+    compta_clients: { lot: 8, etat: 'Encours, encaissements et lettrage, relances, exports CSV / Excel', actif: true },
+    compta_fournisseurs: { lot: 8, etat: 'Factures et règlements fournisseurs, balance âgée, exports · commandes d’achat au lot 6', actif: true },
     paie: { lot: 9, etat: 'Prévu au lot 9' },
     production: { lot: 7, etat: 'Plan de charge des commandes en service · OF en 3 parties au lot 7', actif: true },
     bom: { lot: 7, etat: 'Fiches articles en lecture · nomenclatures au lot 7', actif: true },
     stock_mp: { lot: 6, etat: 'Fichier des matières en service · mouvements au lot 6', actif: true },
     stock_pf: { lot: 6, etat: 'Prévu au lot 6' },
     parametres: { lot: 2, etat: 'En service', actif: true },
+    compta_generale: { lot: 8, etat: 'Retenues à la source, journaux et balance, plan comptable, CMUP', actif: true },
   };
   app.get('/api/accueil', { preHandler: CONNECTE }, async (req) => {
     const cat = await D.catalogue();

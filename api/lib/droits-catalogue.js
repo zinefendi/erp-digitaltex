@@ -25,6 +25,8 @@ const MODULES = [
     ['factures', 'Factures', TOUT],
     ['avoirs', 'Avoirs', TOUT],
     ['reglements', 'Avances et règlements', SANS('supprimer')],
+    // 0.7.0 : articles et prestations vendus hors Studio (créés par le commercial ou le comptable)
+    ['articles', 'Articles et prestations (hors Studio)', SANS('valider', 'annuler')],
   ]],
   [3, 'compta_clients', 'Comptabilité clients', [
     ['comptes', 'Comptes clients et échéances', ['lire', 'modifier', 'exporter']],
@@ -80,6 +82,13 @@ const MODULES = [
     ['audit', 'Journal d’audit', ['lire', 'exporter']],
     ['sauvegardes', 'Sauvegardes et restauration', ['lire', 'valider']],
   ]],
+  // 0.7.0 (migration 006) : module demandé par le comptable — retenues à la source gérées à part
+  [11, 'compta_generale', 'Comptabilité générale', [
+    ['retenues', 'Retenues à la source (subies et opérées)', ['lire', 'creer', 'valider', 'annuler', 'exporter']],
+    ['journaux', 'Journaux, écritures et balance', ['lire', 'exporter']],
+    ['plan', 'Plan comptable', ['lire', 'modifier']],
+    ['valorisation', 'Valorisation des stocks (CMUP)', ['lire', 'exporter']],
+  ]],
 ];
 
 const VISIBILITES = [
@@ -114,8 +123,8 @@ const MATRICE = {
     visibilites: [],
   },
   comptabilite: {
-    modules: { infographie: 'L', commercial: 'L', compta_clients: 'G', compta_fournisseurs: 'G', production: 'L', bom: 'L', stock_mp: 'L', stock_pf: 'L' },
-    remplace: { 'commercial.factures': 'G', 'commercial.avoirs': 'G', 'commercial.reglements': 'G', 'paie.journal': 'L', 'parametres.fiscalite': 'L' },
+    modules: { infographie: 'L', commercial: 'L', compta_clients: 'G', compta_fournisseurs: 'G', compta_generale: 'G', production: 'L', bom: 'L', stock_mp: 'L', stock_pf: 'L' },
+    remplace: { 'commercial.factures': 'G', 'commercial.avoirs': 'G', 'commercial.reglements': 'G', 'commercial.articles': 'G', 'paie.journal': 'L', 'parametres.fiscalite': 'L' },
     visibilites: ['prix', 'encours', 'achats', 'couts', 'masse_salariale'],
   },
   production: {

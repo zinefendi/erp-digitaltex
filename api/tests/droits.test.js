@@ -36,11 +36,11 @@ test.after(async () => { await app.close(); await pool.end(); });
 
 const mesDroits = async (k) => (await appel('GET', '/api/droits/moi', { jeton: J[k].jeton })).json();
 
-test('catalogue : 10 modules, 50 fonctions, matrice en base = matrice du code', async () => {
+test('catalogue : 11 modules, 55 fonctions, matrice en base = matrice du code', async () => {
   const cat = (await appel('GET', '/api/droits/catalogue', { jeton: J.admin.jeton })).json();
-  assert.equal(cat.modules.length, 10);
-  assert.deepEqual(cat.modules.map((m) => m.numero), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  assert.equal(cat.modules.flatMap((m) => m.fonctions).length, 50);
+  assert.equal(cat.modules.length, 11);
+  assert.deepEqual(cat.modules.map((m) => m.numero), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.equal(cat.modules.flatMap((m) => m.fonctions).length, 55);
   assert.equal(cat.actions.length, 7);
   for (const role of Object.keys(C.MATRICE)) {
     const id = (await pool.query('select id from noyau.roles where code = $1', [role])).rows[0].id;
@@ -55,8 +55,10 @@ test('catalogue : 10 modules, 50 fonctions, matrice en base = matrice du code', 
 
 test('matrice CDC § 5.2 : modules visibles par rôle', async () => {
   const mods = async (k) => (await mesDroits(k)).modules;
-  assert.equal((await mods('admin')).length, 10);
-  assert.equal((await mods('direction')).length, 10);
+  assert.equal((await mods('admin')).length, 11);
+  assert.equal((await mods('direction')).length, 11);
+  assert.ok((await mods('compta')).includes('compta_generale'));
+  assert.ok(!(await mods('commercial')).includes('compta_generale'));
   assert.deepEqual(await mods('rh'), ['paie', 'production', 'parametres']);
   assert.ok(!(await mods('commercial')).includes('paie'));
   assert.ok(!(await mods('commercial')).includes('parametres'));
@@ -84,6 +86,13 @@ test('matrice CDC § 5.2 : actions clés', async () => {
   assert.equal(await p('compta', 'commercial.devis', 'creer'), false);
   assert.equal(await p('compta', 'parametres.fiscalite', 'lire'), true);
   assert.equal(await p('compta', 'parametres.fiscalite', 'modifier'), false);
+  // 0.7.0 : la Comptabilité crée des articles hors Studio et gère les retenues à la source à part
+  assert.equal(await p('compta', 'commercial.articles', 'creer'), true);
+  assert.equal(await p('commercial', 'commercial.articles', 'creer'), true);
+  assert.equal(await p('infographie', 'commercial.articles', 'creer'), false);
+  assert.equal(await p('compta', 'compta_generale.retenues', 'valider'), true);
+  assert.equal(await p('direction', 'compta_generale.journaux', 'lire'), true);
+  assert.equal(await p('direction', 'compta_generale.journaux', 'exporter'), false);
   // Infographie : studio et BOM en gestion
   assert.equal(await p('infographie', 'infographie.studio', 'modifier'), true);
   assert.equal(await p('infographie', 'bom.nomenclatures', 'creer'), true);

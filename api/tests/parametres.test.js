@@ -44,7 +44,7 @@ test('reprise : société, préfixes et compteurs de l’application 3.3.0', asy
   assert.deepEqual(s.a_completer, ['registre de commerce', 'RIB']);
   const n = (await appel('GET', '/api/parametres/numerotation', { jeton: J.admin })).json();
   const par = Object.fromEntries(n.map((x) => [x.type, x]));
-  assert.equal(n.length, 8);
+  assert.equal(n.length, 12); // 8 + 4 ajoutés en 0.7.0 (encaissement, facture fournisseur, règlement fournisseur, certificat RAS)
   assert.equal(par.commande.prochain, `CMD-${new Date().getFullYear()}-0003`);
   assert.equal(par.facture.prochain, `FAC-${new Date().getFullYear()}-0003`);
   assert.equal(par.bl.prochain, `BL-${new Date().getFullYear()}-0002`);
@@ -150,8 +150,8 @@ test('droits : tous lisent, seul le Super admin modifie ; la Comptabilité lit l
 
 test('accueil : modules selon les droits, chiffres d’administration réservés', async () => {
   const a = (await appel('GET', '/api/accueil', { jeton: J.admin })).json();
-  assert.equal(a.modules.length, 10);
-  assert.deepEqual(a.modules.map((m) => m.numero), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.equal(a.modules.length, 11);
+  assert.deepEqual(a.modules.map((m) => m.numero), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   assert.equal(a.modules.find((m) => m.code === 'parametres').actif, true);
   assert.equal(a.comptes.actifs, 4); assert.ok(a.securite);
   const at = (await appel('GET', '/api/accueil', { jeton: J.atelier })).json();

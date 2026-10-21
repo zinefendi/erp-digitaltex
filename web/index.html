@@ -183,7 +183,7 @@ a.tuile:hover{border-color:var(--brand)}
 .section-t + p{margin:2px 14px 0;color:var(--ink-2);font-size:12.5px}
 @media (max-width:860px){.roles-page{grid-template-columns:1fr}.liste-roles{position:static;flex-direction:row;overflow-x:auto}.liste-roles h4{display:none}.liste-roles button{min-width:160px}}
 
-/* Accueil : 10 modules */
+/* Accueil : 11 modules */
 .modules{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .module{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px;min-height:132px;position:relative;text-decoration:none;color:inherit}
 .module .n{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--brand);letter-spacing:.02em}
@@ -248,6 +248,13 @@ table.nombres td.n{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 td.rouge{color:var(--org-d);font-weight:600}
 tr.cliquable{cursor:pointer}tr.cliquable:hover td{background:var(--org-l)!important}
 tr.inactif-l td{opacity:.55}tr.barre-l td{text-decoration:line-through;color:var(--ink-2)}
+/* 0.7.0 comptabilité */
+.exp-g{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:4px 6px 4px 10px}
+.exp-g .btn.sm{height:30px}
+.raccourci .exp-g{flex:none}
+dialog .panneau td input{border:1px solid var(--rule);border-radius:7px;padding:5px 7px;font:inherit;text-align:right}
+dialog .panneau td input[data-c=designation]{text-align:left}
+.titre-bloc + .panneau{margin-bottom:6px}
 tfoot td{background:#faf6f1;font-weight:600;border-top:1px solid var(--rule)}
 .badge.ret{background:var(--org);color:#fff}
 .jauge{width:120px;height:7px;border-radius:99px;background:var(--beige);overflow:hidden;margin-bottom:3px}.jauge i{display:block;height:100%;background:var(--brand);border-radius:99px}
