@@ -61,14 +61,15 @@ const MODS = {
   commercial: { court: 'Commercial', desc: 'Clients, commandes, bons de livraison et factures, en réseau.', f: {
     tableau: { t: 'cadre', page: 'gestion', onglet: 'dash', ico: 'chart', libelle: 'Tableau de bord', d: 'Chiffres clés de la gestion', prix: true, droit: 'commercial.commandes' },
     clients: { t: 'cadre', page: 'gestion', onglet: 'clients', ico: 'user', d: 'Fiches clients et historique', sansPrix: 'clients' },
-    devis: { t: 'futur', lot: 4, ico: 'doc', d: 'Devis (DEV), transformés en commande en un clic',
-      cdc: ['Circuit : Devis (DEV) → Proforma (PRO) → Commande (CMD) → BL → Facture (FAC) → Règlements (REC).', 'Transformation en un clic, sans ressaisie, avec traçabilité amont ↔ aval.', 'Statuts : brouillon, envoyé, accepté, refusé, expiré.'] },
-    proformas: { t: 'futur', lot: 4, ico: 'doc', d: 'Factures proforma (PRO)', cdc: ['Proforma issue du devis accepté, transformable en commande.', 'Export : USD / EUR avec taux de change mémorisé, Incoterms 2020, documents en français ou en anglais.'] },
+    devis: { t: 'natif', ecran: 'devis', ico: 'doc', d: 'Devis (DEV) → proforma ou commande en un clic' },
+    proformas: { t: 'natif', ecran: 'proformas', ico: 'doc', d: 'Factures proforma (PRO), export FR / EN, Incoterms' },
     commandes: { t: 'cadre', page: 'gestion', onglet: 'orders', ico: 'list', d: 'Commandes, avances, fiches, suivi', sansPrix: 'commandes' },
     bl: { t: 'cadre', page: 'gestion', onglet: 'bls', ico: 'truck', d: 'Livraisons totales ou partielles', sansPrix: 'bl' },
     factures: { t: 'cadre', page: 'gestion', onglet: 'invoices', ico: 'euro', d: 'Factures, TVA, timbre, règlements', sansPrix: 'interdit' },
-    avoirs: { t: 'futur', lot: 4, ico: 'doc', d: 'Avoirs (AV) partiels ou totaux', cdc: ['Avoir partiel ou total rattaché à la facture d’origine, numérotation AV.', 'Une facture émise n’est jamais supprimée : elle est annulée par un avoir.'] },
+    avoirs: { t: 'natif', ecran: 'avoirs', ico: 'doc', d: 'Avoirs (AV) partiels ou totaux sur facture' },
+    export: { t: 'natif', ecran: 'colisage', fonction: 'factures', prix: true, ico: 'truck', libelle: 'Documents export', d: 'Colisage (packing list) des factures export' },
     reglements: { t: 'cadre', page: 'gestion', onglet: 'invoices', ico: 'check', d: 'Avances (commande) et règlements (facture)', sansPrix: 'interdit' },
+    produits_finis: { t: 'cadre', page: 'produits', ico: 'box', libelle: 'Produits finis', d: 'Références, BOM, gamme, prix de revient et prix' },
     articles: { t: 'natif', ecran: 'articlesVente', ico: 'box', libelle: 'Articles et prestations', d: 'Vendus hors Studio : transport, réassort, services' },
   } },
   compta_clients: { court: 'Clients', desc: 'Encours, encaissements et lettrage, chèques et effets, relances, exports CSV ou Excel.', f: {
@@ -137,6 +138,7 @@ const PAGES_CADRE = {
   studio: { src: '/studio/index.html', titre: 'Studio 3D' },
   gestion: { src: '/studio/gestion.html', titre: 'Gestion' },
   catalogue: { src: '/studio/parametres.html', titre: 'Catalogue' },
+  produits: { src: '/studio/produits-finis.html', titre: 'Produits finis' },
 };
 const ONGLET_FONCTION = { dash: 'tableau', orders: 'commandes', bls: 'bl', invoices: 'factures', clients: 'clients' };
 
@@ -284,7 +286,8 @@ const fonctionsVues = (mod) => {
   const lisibles = new Set(m.fonctions.map((f) => f.code.split('.')[1]));
   return Object.entries(MODS[mod].f).filter(([k, d]) => {
     if (k === 'tableau') return voit('prix') && lisibles.has('commandes');
-    return lisibles.has(k);
+    if (d.prix && !voit('prix')) return false;
+    return lisibles.has(d.fonction || k);
   }).map(([k, d]) => ({ code: k, ...d, libelle: d.libelle || libFonction(mod, k) }));
 };
 function dessinerRail() {

@@ -555,7 +555,8 @@ function choixRoles(coches = []) {
 }
 
 function fenetre(html, onValider) {
-  const d = $('#fen'), f = $('#fen-form');
+  // formulaire neuf à chaque ouverture : les écouteurs de la fenêtre précédente ne s'accumulent pas
+  const d = $('#fen'), f0 = $('#fen-form'), f = f0.cloneNode(false); f0.replaceWith(f);
   f.innerHTML = html;
   f.onsubmit = async (e) => {
     if (e.submitter?.value === 'annuler') return;
@@ -852,5 +853,6 @@ document.addEventListener('click', async (e) => {
 })();
 </script>
 <script src="/erp-coquille.js"></script>
+<script src="/erp-ventes.js"></script>
 </body>
 </html>

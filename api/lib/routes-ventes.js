@@ -119,7 +119,7 @@ async function controlePerte(db, req, doc, confirmer, entite, entiteId) {
   const perte = await V.lignesEnPerte(db, doc.lignes, { ttc: doc.prix_ttc, tva: doc.tva, devise: doc.devise, taux: doc.taux_change });
   if (!perte.length) return false;
   if (!confirmer) {
-    throw leve('vente_a_perte', `Attention : vente à perte sur ${perte.map((p) => `${p.ref} (prix ${p.pu_ht_dt.toFixed(3)} DT HT < prix de revient ${p.pri.toFixed(3)} DT)`).join(', ')}. Cochez « Confirmer la vente à perte » pour enregistrer.`, 409, { lignes: perte });
+    throw leve('vente_a_perte', `Attention : vente à perte sur ${perte.map((p) => `${p.ref} (prix ${p.pu_ht_dt.toFixed(3)} DT HT < prix de revient ${p.pri.toFixed(3)} DT)`).join(', ')}. Confirmez la vente à perte pour enregistrer.`, 409, { lignes: perte });
   }
   await S.auditer(db, req, 'vente_a_perte_confirmee', { entite, entiteId, details: { lignes: perte } });
   return true;

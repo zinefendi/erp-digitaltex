@@ -14,7 +14,7 @@ const { migrer } = require(path.join(API, 'lib/migrations'));
 require(path.join(API, 'lib/droits'))._viderCache();
 const mdp = require(path.join(API, 'lib/mdp'));
 (async () => {
-  await pool.query(`drop schema if exists compta cascade; drop schema if exists registres cascade; drop schema if exists commercial cascade; drop schema if exists infographie cascade; drop schema if exists parametres cascade; drop schema if exists noyau cascade; drop schema if exists reprise cascade; drop table if exists public.migrations;
+  await pool.query(`drop schema if exists ventes cascade; drop schema if exists pf cascade; drop schema if exists compta cascade; drop schema if exists registres cascade; drop schema if exists commercial cascade; drop schema if exists infographie cascade; drop schema if exists parametres cascade; drop schema if exists noyau cascade; drop schema if exists reprise cascade; drop table if exists public.migrations;
     create schema reprise; create table reprise.enregistrements (id bigserial primary key, collection text not null, id_origine text not null, donnees jsonb not null, unique (collection, id_origine));`);
   const logo = 'data:image/png;base64,' + require('fs').readFileSync(path.join(RACINE, 'web/studio/icon.png')).toString('base64');
   await pool.query(`insert into reprise.enregistrements (collection, id_origine, donnees) values
