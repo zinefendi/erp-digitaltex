@@ -1,0 +1,5 @@
+Source modifiée du Studio 3D intégré à l'ERP (web/studio/patron-studio.js).
+Base : Uniform Studio 3D 3.3.0 (build/src). Changements ERP 0.6.0 dans app.js :
+- produits enregistrés avec « article » et « marks » (le serveur recalcule les prix) ;
+- mode « noPrice » (compte sans droit prix) : aucun montant affiché, avances masquées.
+Compilation : npx esbuild src/main.js --bundle --minify --target=es2020 --loader:.css=text --outfile=…/erp/web/studio/patron-studio.js

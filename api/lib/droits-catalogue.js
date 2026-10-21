@@ -109,6 +109,8 @@ const MATRICE = {
   },
   infographie: {
     modules: { infographie: 'G', commercial: 'L', production: 'L', bom: 'G', stock_mp: 'L', stock_pf: 'L' },
+    // 0.6.0 (migration 005) : commandes et clients créés depuis le Studio, toujours sans voir les prix
+    remplace: { 'commercial.commandes': ['lire', 'creer', 'modifier'], 'commercial.clients': ['lire', 'creer', 'modifier'] },
     visibilites: [],
   },
   comptabilite: {

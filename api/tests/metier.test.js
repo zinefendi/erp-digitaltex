@@ -138,6 +138,78 @@ test('gestion : création, numéro serveur, règles factures', async () => {
   assert.equal((await appel('POST', '/api/commercial/numero', { jeton: J.atelier, body: { kind: 'invoice' } })).statusCode, 403);
 });
 
+test('studio sans prix : l’infographiste crée et modifie une commande, prix fixés par le serveur', async () => {
+  // numéro inventé (non attribué par le serveur à ce compte) : refusé
+  const ligne = (uid, sz, q, hex = '#29669d') => ({ id: `${uid}|${hex}|${sz}`, src: 'studio', item: uid, designation: 'Polo', article: 'polo_h', color: hex, size: sz, qty: q, pu: 0.001 });
+  const prod = (uid) => ({ uid, article: 'polo_h', garment: 'Polo', qty: 0, total: 1, marks: { front: { mode: 'print' }, back: { mode: 'embroidery', stitches: 8000 } } });
+  let r = await appel('PUT', '/api/commercial/orders', { jeton: J.infographie, body: { number: 'CMD-2026-0999', client: { name: 'Hôtel Test' }, lines: [ligne('p1', 'M', 2)], products: [prod('p1')] } });
+  assert.equal(r.json().erreur, 'numero_absent');
+  // BL et factures toujours interdits sans prix
+  assert.equal((await appel('PUT', '/api/commercial/bls', { jeton: J.infographie, body: { orderId: 'x', lines: [] } })).statusCode, 403);
+  assert.equal((await appel('PUT', '/api/commercial/invoices', { jeton: J.infographie, body: { number: 'FAC-2026-0050', lines: [] } })).statusCode, 403);
+  // client créé depuis le studio
+  r = await appel('PUT', '/api/commercial/clients', { jeton: J.infographie, body: { name: 'Clinique Studio' } });
+  assert.equal(r.statusCode, 200); const cl = r.json();
+  // un client modifié sans prix garde ses champs masqués (encours)
+  await appel('PUT', '/api/commercial/clients', { jeton: J.admin, body: { ...cl, encours: 1234 } });
+  r = await appel('PUT', '/api/commercial/clients', { jeton: J.infographie, body: { ...cl, phone: '+216 70 000 000', encours: 0 } });
+  assert.equal(r.statusCode, 200); assert.equal(r.json().encours, undefined);
+  assert.equal((await pool.query(`select donnees->>'encours' e, donnees->>'phone' t from commercial.documents where collection = 'clients' and id = $1`, [cl.id])).rows[0].e, '1234');
+  const num = (await appel('POST', '/api/commercial/numero', { jeton: J.infographie, body: { kind: 'order' } })).json().numero;
+  assert.ok(num);
+  const body = { number: num, client: { id: cl.id, name: cl.name }, date: '2026-10-21', status: 'soldee', total: 1, advances: [{ amount: 9999 }],
+    lines: [ligne('p1', 'M', 2), ligne('p1', 'XL', 1), { id: 'p1|setup', src: 'studio', item: 'p1', designation: 'Programme', qty: 1, pu: 0, service: true }, { id: 'main', designation: 'Ajout pirate', qty: 1, pu: 500 }],
+    products: [prod('p1')] };
+  r = await appel('PUT', '/api/commercial/orders', { jeton: J.infographie, body });
+  assert.equal(r.statusCode, 200, r.body);
+  const t = r.body;
+  for (const v of ['"pu"', '"total"', 'advances', '9999']) assert.ok(!t.includes(v), 'réponse infographie : fuite ' + v);
+  const id = r.json().id;
+  // vue commerciale : prix calculés par le serveur (impression 4 + broderie 8000 pts × 0,5/1000 = 4 → +8 par pièce)
+  let o = (await appel('GET', '/api/commercial/gestion', { jeton: J.commercial })).json().orders.find((x) => x.id === id);
+  const pu = Object.fromEntries(o.lines.map((l) => [l.size || l.id, l.pu]));
+  assert.equal(pu.M, 49.99); assert.equal(pu.XL, 52); assert.equal(pu['p1|setup'], 80);
+  assert.equal(o.total, 231.98);
+  assert.equal(o.status, 'en_cours'); assert.deepEqual(o.advances, []);
+  assert.ok(!o.lines.some((l) => l.id === 'main'), 'ligne « à la main » d’un compte sans prix ignorée');
+  assert.equal(o.products[0].total, o.total);
+  // le commercial ajoute une avance, une ligne manuelle et fixe un prix négocié
+  o.advances = [{ amount: 50 }]; o.lines.find((l) => l.size === 'M').pu = 45; o.lines.push({ id: 'm1', designation: 'Écusson', qty: 3, pu: 2 });
+  o.total = 2 * 45 + 52 + 80 + 6;
+  assert.equal((await appel('PUT', '/api/commercial/orders', { jeton: J.commercial, body: o })).statusCode, 200);
+  // l'infographiste revient sur la commande (vue masquée) : ajoute 3 pièces M en noir ; rien d'autre ne bouge
+  const vue = (await appel('GET', '/api/commercial/gestion', { jeton: J.infographie })).json().orders.find((x) => x.id === id);
+  assert.equal(vue.advances, undefined);
+  vue.lines = [ligne('p1', 'M', 2), ligne('p1', 'XL', 1), ligne('p1', 'M', 3, '#000000'), ligne('p1', 'S', 1, '#ffffff'), { id: 'p1|setup', src: 'studio', item: 'p1', qty: 1, service: true }];
+  vue.products = [prod('p1')];
+  assert.equal((await appel('PUT', '/api/commercial/orders', { jeton: J.infographie, body: vue })).json().erreur, 'taille_inconnue');
+  vue.lines = vue.lines.filter((l) => l.size !== 'S');
+  r = await appel('PUT', '/api/commercial/orders', { jeton: J.infographie, body: vue });
+  assert.equal(r.statusCode, 200, r.body);
+  o = (await appel('GET', '/api/commercial/gestion', { jeton: J.commercial })).json().orders.find((x) => x.id === id);
+  const p2 = Object.fromEntries(o.lines.map((l) => [l.id, l.pu]));
+  assert.equal(p2['p1|#29669d|M'], 45, 'prix négocié conservé'); assert.equal(p2['p1|#000000|M'], 49.99); assert.equal(p2.m1, 2);
+  assert.deepEqual(o.advances, [{ amount: 50 }]);
+  assert.equal(o.total, 377.97);
+  // article sans tarif : refus explicite
+  vue.lines = [{ ...ligne('p9', 'M', 1), article: 'inconnu' }]; vue.products = [{ ...prod('p9'), article: 'inconnu' }];
+  assert.equal((await appel('PUT', '/api/commercial/orders', { jeton: J.infographie, body: vue })).json().erreur, 'article_sans_tarif');
+  // quantité invalide
+  vue.lines = [ligne('p1', 'M', -4)]; vue.products = [prod('p1')];
+  assert.equal((await appel('PUT', '/api/commercial/orders', { jeton: J.infographie, body: vue })).json().erreur, 'quantite_invalide');
+  // le même numéro ne sert pas deux fois
+  assert.equal((await appel('PUT', '/api/commercial/orders', { jeton: J.infographie, body: { ...body, id: undefined } })).json().erreur, 'numero_pris');
+  // commande annulée : figée pour l'infographiste
+  o.status = 'annulee'; assert.equal((await appel('PUT', '/api/commercial/orders', { jeton: J.commercial, body: o })).statusCode, 200);
+  vue.lines = [ligne('p1', 'M', 1)];
+  assert.equal((await appel('PUT', '/api/commercial/orders', { jeton: J.infographie, body: vue })).json().erreur, 'commande_figee');
+  // l'atelier (production) reste sans droit d'écriture
+  assert.equal((await appel('POST', '/api/commercial/numero', { jeton: J.atelier, body: { kind: 'order' } })).statusCode, 403);
+  // tracé dans le journal
+  const a = (await pool.query(`select details from noyau.audit where action = 'commande_cree' and entite_id = $1`, [id])).rows[0];
+  assert.equal(a.details.prix, 'calculés par le serveur');
+});
+
 test('gestion : client supprimable seulement s’il n’a aucun document', async () => {
   let r = await appel('DELETE', '/api/commercial/clients/c1', { jeton: J.admin });
   assert.equal(r.json().erreur, 'client_utilise');

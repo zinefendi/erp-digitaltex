@@ -1,8 +1,8 @@
 FROM node:22-alpine
 ENV NODE_ENV=production TZ=Africa/Tunis
 WORKDIR /app
-COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
 COPY server.js ./
 COPY lib ./lib
 COPY migrations ./migrations

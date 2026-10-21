@@ -1,0 +1,10 @@
+{
+  "name": "erp-uniform-studio-build",
+  "private": true,
+  "description": "Outils de construction d'ERP Uniform Studio (non livrés dans l'application)",
+  "devDependencies": {
+    "@electron/asar": "4.3.1",
+    "electron": "44.9.3",
+    "resedit": "3.1.0"
+  }
+}

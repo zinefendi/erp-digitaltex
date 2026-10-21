@@ -324,6 +324,7 @@ dialog::backdrop{background:rgba(23,40,58,.45)}
       <div class="champ"><label for="c-mdp">Mot de passe</label><input id="c-mdp" name="mot_de_passe" type="password" autocomplete="current-password" required></div>
       <button class="btn plein" type="submit">Se connecter</button>
       <p class="mute small" style="margin-top:16px">Mot de passe oublié : demandez au Super administrateur de le réinitialiser.</p>
+      <p class="mute small" id="lien-appli" style="margin-top:6px"><a href="/telechargements/" rel="noopener">Télécharger l’application Windows « ERP Uniform Studio »</a></p>
     </form>
   </div>
 </section>
@@ -408,6 +409,8 @@ function afficher(vue) {
 }
 
 /* ---------- Connexion ---------- */
+// dans l'application Windows, le lien de téléchargement n'a pas de sens
+if (window.erpPoste) $('#lien-appli')?.remove();
 $('#f-connexion').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = $('#connexion-err'); erreurDans(err, '');

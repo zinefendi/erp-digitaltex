@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>ERP UNIFORM STUDIO — hors ligne</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<style>
+  html,body{margin:0;height:100%;font-family:"Segoe UI",system-ui,sans-serif;background:#1f4f7d;color:#fff}
+  .c{height:100%;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
+  .b{max-width:520px;background:#fff;color:#1d2b3a;border-radius:14px;padding:32px 36px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  h1{margin:0 0 6px;font-size:20px;color:#1f4f7d} .s{margin:0 0 18px;color:#5b6b7b;font-size:13px;letter-spacing:.04em;text-transform:uppercase}
+  p{line-height:1.55;margin:0 0 12px} ul{margin:0 0 18px;padding-left:20px;line-height:1.7}
+  button{font:inherit;font-weight:600;background:#1f4f7d;color:#fff;border:0;border-radius:8px;padding:11px 22px;cursor:pointer}
+  button:hover{background:#163c61} .d{margin-top:14px;font-size:12px;color:#8695a4} code{font-family:Consolas,monospace}
+</style></head>
+<body><div class="c"><div class="b">
+  <p class="s">ERP UNIFORM STUDIO · DIGITAL-TEX S.A.</p>
+  <h1>Le serveur de l’ERP ne répond pas</h1>
+  <p>L’application n’arrive pas à joindre <code>app.vethypro.com</code>. Vérifiez :</p>
+  <ul><li>que ce poste est connecté à Internet ;</li><li>qu’un autre poste arrive à ouvrir l’ERP ;</li><li>sinon, prévenez le Super administrateur.</li></ul>
+  <button id="r">Réessayer</button>
+  <p class="d" id="d"></p>
+</div></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  if (q.get('erreur')) document.getElementById('d').textContent = 'Détail : ' + q.get('erreur');
+  document.getElementById('r').onclick = () => window.erpPoste && window.erpPoste.reessayer();
+  setTimeout(() => window.erpPoste && window.erpPoste.reessayer(), 30000);
+</script>
+</body></html>

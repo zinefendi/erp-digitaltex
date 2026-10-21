@@ -1,0 +1,9 @@
+{
+  "name": "erp-uniform-studio",
+  "productName": "ERP Uniform Studio",
+  "version": "1.0.0",
+  "description": "ERP UNIFORM STUDIO (pour DIGITAL-TEX S.A.) — poste Windows de l'ERP app.vethypro.com",
+  "main": "main.js",
+  "author": "DIGITAL-TEX S.A.",
+  "license": "UNLICENSED"
+}

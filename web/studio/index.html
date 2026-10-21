@@ -37,6 +37,7 @@
     const local = JSON.parse(localStorage.getItem('patron-studio:atelier-settings') || '{}');
     Object.assign(cfg, {
       mode: 'atelier', brand: 'Uniform Studio 3D', loggedIn: false,
+      noPrice: !r.prix_visibles, // aucun montant affiché : les prix sont fixés par le serveur
       isPro: true, watermark: false, wmView: false,
       aiEnabled: false, shopEnabled: true, homeUrl: '',
       pdfjsBase: 'vendor/',

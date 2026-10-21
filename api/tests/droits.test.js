@@ -87,7 +87,13 @@ test('matrice CDC § 5.2 : actions clés', async () => {
   // Infographie : studio et BOM en gestion
   assert.equal(await p('infographie', 'infographie.studio', 'modifier'), true);
   assert.equal(await p('infographie', 'bom.nomenclatures', 'creer'), true);
-  assert.equal(await p('infographie', 'commercial.commandes', 'modifier'), false);
+  // 0.6.0 : commandes créées depuis le Studio (sans prix) ; ni validation, ni annulation, ni BL / factures
+  assert.equal(await p('infographie', 'commercial.commandes', 'creer'), true);
+  assert.equal(await p('infographie', 'commercial.commandes', 'modifier'), true);
+  assert.equal(await p('infographie', 'commercial.commandes', 'annuler'), false);
+  assert.equal(await p('infographie', 'commercial.commandes', 'valider'), false);
+  assert.equal(await p('infographie', 'commercial.bl', 'creer'), false);
+  assert.equal(await p('infographie', 'commercial.factures', 'creer'), false);
   // Atelier : valide les 3 parties, sorties MP, entrées PF ; ne voit ni devis ni factures
   assert.equal(await p('atelier', 'production.etapes', 'valider'), true);
   assert.equal(await p('atelier', 'stock_mp.sorties', 'creer'), true);

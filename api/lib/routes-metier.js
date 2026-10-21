@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { pool, transaction } = require('./db');
 const S = require('./securite');
 const D = require('./droits');
+const P = require('./prix-studio');
 
 const GLB_DIR = process.env.ERP_GLB_DIR || '/data/glb';
 const FACTORY = process.env.ERP_CATALOGUE_USINE || '/data/catalogue-usine.json';
@@ -149,13 +150,35 @@ module.exports = async function routesMetier(app) {
     preHandler: S.exigerConnexion(), bodyLimit: 15 * 1024 * 1024,
     schema: { params: { type: 'object', properties: { col: { type: 'string', enum: COLS } } }, body: { type: 'object' } },
   }, async (req, reply) => {
-    const col = req.params.col, rec = req.body;
-    if (!D.voit(req.droits, 'prix')) return erreur(reply, 403, 'interdit', 'Enregistrer des documents commerciaux demande de voir les prix.');
+    const col = req.params.col;
+    let rec = req.body;
+    // Sans le droit « prix » : clients autorisés ; commandes avec prix fixés par le serveur (lib/prix-studio.js) ;
+    // BL et factures toujours refusés.
+    const sansPrix = !D.voit(req.droits, 'prix');
+    if (sansPrix && !['clients', 'orders'].includes(col)) return erreur(reply, 403, 'interdit', 'Enregistrer ce document demande de voir les prix.');
     if (rec.id && !/^[A-Za-z0-9_-]{1,40}$/.test(rec.id)) return erreur(reply, 400, 'id_invalide', 'Identifiant invalide.');
     return transaction(async (c) => {
       const avant = rec.id ? (await c.query('select donnees from commercial.documents where collection = $1 and id = $2 for update', [col, rec.id])).rows[0]?.donnees : null;
       const action = avant ? 'modifier' : 'creer';
       if (!D.peut(req.droits, DROIT_COL[col], action)) return erreur(reply, 403, 'interdit', `Vos droits ne permettent pas de ${action === 'creer' ? 'créer' : 'modifier'} ce document.`);
+      if (sansPrix && col === 'orders') {
+        if (!avant) {
+          // le numéro doit avoir été attribué par le serveur à ce même compte, et ne servir qu'une fois
+          const n = String(rec.number || '').slice(0, 40);
+          await c.query('select pg_advisory_xact_lock(727002, hashtext($1))', [n]); // deux postes, même numéro : l'un après l'autre
+          const attribue = n && (await c.query(`select 1 from noyau.audit where action = 'numero_attribue' and entite_id = 'commande'
+            and utilisateur_id = $1 and details->>'numero' = $2 limit 1`, [req.utilisateur.id, n])).rowCount;
+          if (!attribue) return erreur(reply, 400, 'numero_absent', 'Une nouvelle commande doit avoir un numéro attribué par le serveur.');
+          if ((await c.query(`select 1 from commercial.documents where collection = 'orders' and donnees->>'number' = $1`, [n])).rowCount) return erreur(reply, 400, 'numero_pris', 'Ce numéro de commande est déjà utilisé.');
+        }
+        const cat = await lireCatalogue(c);
+        try { rec = P.fusionnerCommande(rec, avant, cat?.donnees); } catch (e) { if (e instanceof P.ErreurPrix) return erreur(reply, 400, e.code, e.message); throw e; }
+      }
+      if (sansPrix && col === 'clients' && avant) {
+        // champs que ce compte ne voit pas (encours, montants) : ceux du serveur, jamais effacés
+        rec = { ...rec };
+        for (const [vis, champs] of Object.entries(D.CHAMPS_MASQUES)) if (!D.voit(req.droits, vis)) for (const k of champs) if (!k.includes('[]')) { if (avant[k] !== undefined) rec[k] = avant[k]; else delete rec[k]; }
+      }
       // règles de la 3.3.0, maintenant contrôlées par le serveur
       if (avant && col === 'invoices') {
         if (avant.status === 'annulee') return erreur(reply, 400, 'facture_annulee', 'Une facture annulée ne se modifie plus.');
@@ -170,8 +193,8 @@ module.exports = async function routesMetier(app) {
         on conflict (collection, id) do update set donnees = excluded.donnees, maj_le = now(), maj_par = excluded.maj_par`, [col, rec.id, rec, req.utilisateur.id]);
       const resume = (x) => x && { numero: x.number || x.name || null, statut: x.status || null, client: x.client?.name || null, lignes: (x.lines || []).length };
       const act = { clients: 'client', orders: 'commande', bls: 'bl', invoices: 'facture' }[col];
-      await S.auditer(c, req, avant ? `${act}_modifie` : `${act}_cree`, { entite: act, entiteId: rec.id, avant: resume(avant), apres: resume(rec) });
-      return rec;
+      await S.auditer(c, req, avant ? `${act}_modifie` : `${act}_cree`, { entite: act, entiteId: rec.id, avant: resume(avant), apres: resume(rec), details: sansPrix && col === 'orders' ? { prix: 'calculés par le serveur' } : undefined });
+      return sansPrix ? D.masquer(req.droits, rec) : rec;
     });
   });
 
