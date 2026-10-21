@@ -24,7 +24,7 @@ async function compte(cle, roles) {
 
 const J = {};
 test.before(async () => {
-  await pool.query('drop schema if exists noyau cascade; drop table if exists public.migrations');
+  await require('./_base').viderBase();
   await migrer(pool, { info: () => {} });
   D._viderCache();
   app = construire({ logger: false, limiteConnexion: 1000 });

@@ -50,6 +50,7 @@ h1,h2,h3{font-family:"Bricolage Grotesque",sans-serif;letter-spacing:-.02em;marg
 .btn{height:42px;padding:0 16px;border-radius:10px;background:var(--brand);color:#fff;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:14px;white-space:nowrap}
 .btn:hover{background:var(--brand-d)}
 .btn.plein{width:100%}
+a.btn{text-decoration:none}
 .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--rule)}
 .btn.ghost:hover{border-color:var(--brand)}
 .btn.danger{background:#fff;color:var(--danger);border:1px solid #e7c3bb}
@@ -130,6 +131,40 @@ a.tuile:hover{border-color:var(--brand)}
 .section-t{padding:14px 14px 0;font-family:"Bricolage Grotesque",sans-serif;font-size:16px;font-weight:700}
 .section-t + p{margin:2px 14px 0;color:var(--ink-2);font-size:12.5px}
 @media (max-width:860px){.roles-page{grid-template-columns:1fr}.liste-roles{position:static;flex-direction:row;overflow-x:auto}.liste-roles h4{display:none}.liste-roles button{min-width:160px}}
+
+/* Accueil : 10 modules */
+.modules{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.module{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px;min-height:132px;position:relative;text-decoration:none;color:inherit}
+.module .n{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--brand);letter-spacing:.02em}
+.module h3{font-size:16.5px;font-weight:700;line-height:1.2}
+.module p{margin:auto 0 0;font-size:12.5px;color:var(--ink-2)}
+.module.actif{border-color:var(--brand);box-shadow:inset 0 0 0 1px var(--brand)}
+a.module.actif:hover{background:var(--brand-l)}
+.module.futur{background:repeating-linear-gradient(135deg,#fff 0 10px,#f7f9fb 10px 20px)}
+.module .lot{position:absolute;top:14px;right:14px;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink-2);border:1px dashed var(--rule);border-radius:6px;padding:1px 6px;background:#fff}
+.module.actif .lot{border-style:solid;border-color:var(--brand);color:var(--brand-d)}
+.chiffres{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:18px}
+.chiffre{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:14px 16px}
+.chiffre b{display:block;font-family:"Bricolage Grotesque",sans-serif;font-size:26px;font-weight:800;letter-spacing:-.02em}
+.chiffre span{font-size:12.5px;color:var(--ink-2)}
+.chiffre.alerte b{color:var(--danger)}
+.titre-bloc{font-family:"Bricolage Grotesque",sans-serif;font-size:17px;font-weight:700;margin:22px 0 10px}
+
+/* Paramètres */
+.onglets{display:flex;gap:4px;border-bottom:1px solid var(--rule);margin-bottom:16px;overflow-x:auto}
+.onglets a{padding:10px 14px;text-decoration:none;color:var(--ink-2);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.onglets a.on{color:var(--brand-d);border-color:var(--brand)}
+.grille2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+.form-pan{padding:18px}
+.logo-zone{display:flex;gap:14px;align-items:center;border:1px dashed var(--rule);border-radius:12px;padding:12px;margin-bottom:14px}
+.logo-zone img{max-height:64px;max-width:200px;object-fit:contain;background:#fff}
+.logo-zone .vide-logo{width:120px;height:56px;display:flex;align-items:center;justify-content:center;color:var(--ink-2);font-size:12px;background:var(--paper);border-radius:8px}
+.num-ex{font-family:"JetBrains Mono",monospace;font-weight:600;color:var(--brand-d)}
+td input.court{width:100px;border:1px solid var(--rule);border-radius:8px;padding:6px 8px;font-family:"JetBrains Mono",monospace;text-transform:uppercase}
+td select.court{border:1px solid var(--rule);border-radius:8px;padding:6px 8px}
+.badge{display:inline-flex;white-space:nowrap;height:20px;align-items:center;padding:0 7px;border-radius:6px;font-size:11px;font-weight:700}
+.badge.vig{background:#e9f4ee;color:var(--ok)}.badge.fut{background:#fdf3e1;color:var(--warn)}.badge.anc{background:#eef1f4;color:var(--ink-2)}
+@media (max-width:860px){.grille2{grid-template-columns:1fr}}
 
 /* Fenêtre */
 dialog{border:0;border-radius:16px;padding:0;width:min(520px,calc(100% - 24px));box-shadow:0 24px 60px rgba(23,40,58,.28)}
@@ -257,6 +292,7 @@ const peut = (f, a = 'lire') => !!DROITS && (DROITS.super_admin || (DROITS.droit
 const lisAudit = () => peut('parametres.audit');
 const lisComptes = () => peut('parametres.utilisateurs');
 const lisRoles = () => peut('parametres.roles');
+const lisParams = () => ['parametres.societe', 'parametres.fiscalite', 'parametres.numerotation'].some((f) => peut(f));
 
 function afficher(vue) {
   for (const v of ['connexion', 'mdp', 'app']) $('#v-' + v).hidden = v !== vue;
@@ -305,28 +341,115 @@ const PAGES = {
   accueil: { titre: 'Accueil', voir: () => true, rendu: pageAccueil },
   comptes: { titre: 'Comptes', voir: lisComptes, rendu: pageComptes },
   roles: { titre: 'Rôles et droits', voir: lisRoles, rendu: pageRoles },
+  parametres: { titre: 'Paramètres', voir: lisParams, rendu: pageParametres },
   journal: { titre: 'Journal', voir: lisAudit, rendu: pageJournal },
 };
 function route() {
   if (!MOI || MOI.doit_changer_mdp) return;
-  let p = location.hash.slice(1) || 'accueil';
+  let p = (location.hash.slice(1) || 'accueil').split('/')[0];
   if (!PAGES[p] || !PAGES[p].voir()) p = 'accueil';
-  $('#menu').innerHTML = Object.entries(PAGES).filter(([, x]) => x.voir()).map(([k, x]) => `<a href="#${k}" class="${k === p ? 'on' : ''}">${x.titre}</a>`).join('');
+  $('#menu').innerHTML = Object.entries(PAGES).filter(([k, x]) => x.voir() && (k !== 'accueil' || true)).map(([k, x]) => `<a href="#${k}" class="${k === p ? 'on' : ''}">${x.titre}</a>`).join('');
   document.title = PAGES[p].titre + ' · ERP DIGITAL-TEX';
   PAGES[p].rendu($('#contenu'));
 }
 addEventListener('hashchange', () => { if (RS.modifie && !confirm('Des changements de droits ne sont pas enregistrés. Quitter la page ?')) { history.back(); return; } RS.modifie = false; route(); });
 addEventListener('beforeunload', (e) => { if (RS.modifie) e.preventDefault(); });
 
-function pageAccueil(m) {
-  const tuiles = [];
-  if (lisComptes()) tuiles.push(['#comptes', 'Comptes', estAdmin() ? 'Créer les comptes de l’équipe, attribuer les rôles, réinitialiser un mot de passe.' : 'Consulter les comptes de l’équipe et leurs rôles.']);
-  if (lisRoles()) tuiles.push(['#roles', 'Rôles et droits', estAdmin() ? 'Régler ce que chaque rôle peut voir et faire, module par module.' : 'Consulter ce que chaque rôle peut voir et faire.']);
-  if (lisAudit()) tuiles.push(['#journal', 'Journal', 'Qui a fait quoi, quand et depuis quel poste.']);
+async function pageAccueil(m) {
+  m.innerHTML = `<div class="entete"><div><h2>Bonjour ${esc(MOI.nom_complet.split(' ')[0])}</h2><p>Chargement…</p></div></div>`;
+  let a; try { a = await api('GET', '/api/accueil'); } catch (x) { m.innerHTML = `<div class="vide">${esc(x.message)}</div>`; return; }
+  const lien = { parametres: '#parametres' };
+  const ch = [];
+  if (a.comptes) ch.push(['', a.comptes.actifs, a.comptes.actifs > 1 ? 'comptes actifs' : 'compte actif', '#comptes'], ['', a.comptes.provisoires, 'en attente de 1re connexion (mot de passe provisoire)', '#comptes']);
+  if (a.comptes?.verrouilles) ch.push(['alerte', a.comptes.verrouilles, 'compte(s) verrouillé(s)', '#comptes']);
+  if (a.securite) ch.push(['', a.securite.connectes_24h, a.securite.connectes_24h > 1 ? 'personnes connectées (24 h)' : 'personne connectée (24 h)', '#journal'], [a.securite.refus_24h >= 10 ? 'alerte' : '', a.securite.refus_24h, 'connexions refusées (24 h)', '#journal']);
+  const comp = a.societe_a_completer?.length ? `<div class="msg info" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span><b>À compléter avant les premières factures :</b> ${a.societe_a_completer.map(esc).join(', ')}.</span><span class="spacer"></span>${peut('parametres.societe', 'modifier') ? '<a class="btn sm" href="#parametres/societe">Compléter</a>' : ''}</div>` : '';
   m.innerHTML = `<div class="entete"><div><h2>Bonjour ${esc(MOI.nom_complet.split(' ')[0])}</h2>
-    <p>Le tableau des 10 modules arrive à l’étape 3 du lot 2. Pour l’instant : la gestion des comptes et le journal.</p></div></div>
-    <div class="bienvenue">${tuiles.map(([h, t, p]) => `<a class="tuile" href="${h}"><h3>${t}</h3><p>${p}</p></a>`).join('')}
-    <div class="tuile"><h3>Studio 3D</h3><p>Continuez à utiliser l’application Uniform Studio 3D sur votre poste : elle sera reliée au serveur à l’étape 4.</p></div></div>`;
+      <p>${a.modules.length === 10 ? 'Les 10 modules de l’ERP' : 'Vos modules'} — ils arrivent un par un, selon le calendrier du cahier des charges.</p></div></div>
+    ${comp}
+    ${ch.length ? `<div class="chiffres">${ch.map(([c, v, l, h]) => `<a class="chiffre ${c}" href="${h}" style="text-decoration:none;color:inherit"><b>${v}</b><span>${esc(l)}</span></a>`).join('')}</div>` : ''}
+    <div class="modules">${a.modules.map((mo) => {
+      const h = mo.actif && lien[mo.code];
+      const tag = h ? 'a' : 'div';
+      return `<${tag} class="module ${mo.actif ? 'actif' : 'futur'}" ${h ? `href="${h}"` : ''}><span class="lot">${mo.actif ? 'en service' : 'lot ' + mo.lot}</span>
+        <span class="n">${String(mo.numero).padStart(2, '0')}</span><h3>${esc(mo.libelle)}</h3><p>${esc(mo.etat)}</p></${tag}>`;
+    }).join('')}</div>
+    ${a.modules.length ? '' : '<div class="vide">Aucun module ne vous est encore attribué. Demandez au Super administrateur de régler votre rôle.</div>'}`;
+}
+
+/* ---------- Paramètres ---------- */
+let PS = {};
+async function pageParametres(m) {
+  const onglets = [['societe', 'Société', 'parametres.societe'], ['fiscalite', 'Fiscalité', 'parametres.fiscalite'], ['numerotation', 'Numérotation', 'parametres.numerotation']].filter((o) => peut(o[2]));
+  let o = location.hash.split('/')[1]; if (!onglets.some((x) => x[0] === o)) o = onglets[0][0];
+  m.innerHTML = `<div class="entete"><div><h2>Paramètres</h2><p>Ces informations figurent sur les devis, BL et factures émis par tous les postes.</p></div></div>
+    <nav class="onglets">${onglets.map(([k, t]) => `<a href="#parametres/${k}" class="${k === o ? 'on' : ''}">${t}</a>`).join('')}</nav><div id="p-param"><div class="vide">Chargement…</div></div>`;
+  try { await ({ societe: ongletSociete, fiscalite: ongletFiscalite, numerotation: ongletNumerotation })[o]($('#p-param')); }
+  catch (x) { $('#p-param').innerHTML = `<div class="vide">${esc(x.message)}</div>`; }
+}
+async function ongletSociete(el) {
+  const s = PS.societe = await api('GET', '/api/parametres/societe');
+  const ro = !peut('parametres.societe', 'modifier');
+  const f = (k, l, attr = '', aide = '') => `<div class="champ"><label for="s-${k}">${l}</label><input id="s-${k}" name="${k}" value="${esc(s[k])}" ${ro ? 'readonly' : ''} ${attr}>${aide ? `<span class="aide">${aide}</span>` : ''}</div>`;
+  el.innerHTML = `<form class="panneau form-pan" id="f-societe" novalidate>
+    ${s.a_completer.length ? `<div class="msg info">À compléter avant les premières factures : <b>${s.a_completer.map(esc).join(', ')}</b>.</div>` : '<div class="msg ok">Toutes les informations nécessaires aux factures sont renseignées.</div>'}
+    <div class="msg err" hidden role="alert"></div>
+    <div class="logo-zone">${s.logo ? `<img src="${esc(s.logo)}" alt="Logo de la société">` : '<div class="vide-logo">Pas de logo</div>'}
+      <div><b>Logo</b><div class="mute small">PNG, JPEG ou WebP, 500 Ko maximum. Imprimé en haut des documents.</div>
+      ${ro ? '' : `<div class="row" style="margin-top:8px;gap:6px"><label class="btn ghost sm" style="cursor:pointer">Choisir une image<input type="file" accept="image/png,image/jpeg,image/webp" id="s-logo-f" hidden></label>${s.logo ? '<button type="button" class="btn ghost sm" data-act="logo-retirer">Retirer</button>' : ''}</div>`}</div></div>
+    <div class="grille2">${f('nom', 'Raison sociale', 'maxlength="120"')}${f('mf', 'Matricule fiscal', 'maxlength="40"')}
+      ${f('adresse', 'Adresse', 'maxlength="200"')}${f('ville', 'Code postal et ville', 'maxlength="80"')}
+      ${f('telephone', 'Téléphone', 'maxlength="40"')}${f('email', 'E-mail', 'type="email" maxlength="120"')}
+      ${f('web', 'Site web', 'maxlength="120"')}${f('rc', 'Registre de commerce (RC)', 'maxlength="40"')}
+      ${f('banque', 'Banque', 'maxlength="80"')}${f('rib', 'RIB', 'maxlength="30" inputmode="numeric"', '20 chiffres, les espaces sont retirés.')}</div>
+    <div class="champ"><label for="s-mentions">Mentions légales en pied de document</label><textarea id="s-mentions" name="mentions" rows="3" maxlength="1000" ${ro ? 'readonly' : ''} style="width:100%;border:1px solid var(--rule);border-radius:10px;padding:10px 12px">${esc(s.mentions)}</textarea>
+      <span class="aide">À reprendre des modèles validés par votre comptable : aucune mention n’est ajoutée automatiquement.</span></div>
+    ${ro ? '<p class="mute small">Lecture seule.</p>' : '<div class="row" style="justify-content:flex-end"><button class="btn" style="flex:none">Enregistrer</button></div>'}</form>`;
+  if (ro) return;
+  const form = $('#f-societe');
+  $('#s-logo-f').onchange = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    if (file.size > 500 * 1024) return toast('Image trop lourde : 500 Ko maximum.', true);
+    const r = new FileReader(); r.onload = () => { PS.logo = r.result; form.querySelector('.logo-zone img, .logo-zone .vide-logo').outerHTML = `<img src="${r.result}" alt="Logo de la société">`; toast('Logo prêt : cliquez sur Enregistrer.'); }; r.readAsDataURL(file);
+  };
+  PS.logo = undefined;
+  form.onsubmit = async (e) => {
+    e.preventDefault(); const err = $('.msg.err', form); erreurDans(err, '');
+    const body = { version: s.version };
+    for (const k of ['nom', 'adresse', 'ville', 'telephone', 'email', 'web', 'mf', 'rc', 'banque', 'rib', 'mentions']) body[k] = form[k].value;
+    if (PS.logo !== undefined) body.logo = PS.logo;
+    try { await api('PUT', '/api/parametres/societe', body); toast('Informations de la société enregistrées.'); ongletSociete(el); }
+    catch (x) { erreurDans(err, x.message); err.scrollIntoView({ block: 'nearest' }); }
+  };
+}
+const dateFr = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR') : '—';
+async function ongletFiscalite(el) {
+  const L = await api('GET', '/api/parametres/fiscalite');
+  const ro = !peut('parametres.fiscalite', 'modifier');
+  const codes = [...new Set(L.map((x) => x.code))];
+  const fmt = (x) => x.unite === '%' ? `${String(x.valeur).replace('.', ',')} %` : `${x.valeur.toFixed(3).replace('.', ',')} DT`;
+  el.innerHTML = `<div class="msg info">Un taux ne s’écrase jamais : on ajoute une nouvelle valeur avec sa date d’effet. Chaque document utilise la valeur en vigueur à sa date.
+      <b>Les valeurs actuelles viennent de l’application 3.3.0 : faites-les confirmer par votre comptable</b>, ainsi que les autres taux (TVA réduites, retenue à la source).</div>
+    ${ro ? '' : '<div class="row" style="justify-content:flex-end;margin-bottom:12px"><button class="btn" style="flex:none" data-act="fisc-ajout">+ Nouvelle valeur datée</button></div>'}
+    <div class="panneau"><table><thead><tr><th>Taux</th><th>Valeur</th><th>En vigueur le</th><th>État</th><th class="masque-mobile">Commentaire</th><th></th></tr></thead><tbody>
+    ${codes.map((c) => L.filter((x) => x.code === c).map((x, i) => `<tr><td>${i ? '' : `<b>${esc(x.libelle)}</b><div class="mono small mute">${esc(x.code)}</div>`}</td>
+      <td class="mono">${fmt(x)}</td><td class="small">${dateFr(x.en_vigueur_le)}</td>
+      <td>${x.en_vigueur ? '<span class="badge vig">En vigueur</span>' : x.a_venir ? '<span class="badge fut">À venir</span>' : '<span class="badge anc">Ancienne</span>'}</td>
+      <td class="small mute masque-mobile">${esc(x.commentaire)}${x.cree_par ? ` · ${esc(x.cree_par)}` : ''}</td>
+      <td>${!ro && x.a_venir ? `<button class="btn ghost sm" data-act="fisc-retirer" data-id="${x.id}">Retirer</button>` : ''}</td></tr>`).join('')).join('')}</tbody></table></div>`;
+  PS.fisc = L;
+}
+async function ongletNumerotation(el) {
+  const L = PS.num = await api('GET', '/api/parametres/numerotation');
+  const ro = !peut('parametres.numerotation', 'modifier');
+  const an = new Date().getFullYear();
+  el.innerHTML = `<div class="msg info">Les numéros officiels sont attribués par le serveur, au moment de la validation du document : <b>jamais de doublon ni de trou</b>, même si plusieurs postes valident en même temps. Les compteurs ne se modifient pas ; ils repartent à 1 chaque 1er janvier.</div>
+    <div class="panneau"><table><thead><tr><th>Document</th><th>Préfixe</th><th>Chiffres</th><th>Dernier numéro ${an}</th><th>Prochain numéro</th><th></th></tr></thead><tbody>
+    ${L.map((x) => `<tr data-type="${x.type}"><td><b>${esc(x.libelle)}</b></td>
+      <td>${ro ? `<span class="mono">${esc(x.prefixe)}</span>` : `<input class="court" name="prefixe" value="${esc(x.prefixe)}" maxlength="6" aria-label="Préfixe ${esc(x.libelle)}">`}</td>
+      <td>${ro ? x.chiffres : `<select class="court" name="chiffres" aria-label="Chiffres ${esc(x.libelle)}">${[3, 4, 5, 6].map((n) => `<option ${n === x.chiffres ? 'selected' : ''}>${n}</option>`).join('')}</select>`}</td>
+      <td class="mono">${x.dernier || '—'}</td><td class="num-ex">${esc(x.prochain)}</td>
+      <td>${ro ? '' : `<button class="btn ghost sm" data-act="num-enr" data-type="${x.type}">Enregistrer</button>`}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 /* ---------- Comptes ---------- */
@@ -419,7 +542,7 @@ const ACTIONS = {
   connexion: 'Connexion', deconnexion: 'Déconnexion', connexion_refusee: 'Connexion refusée', compte_verrouille: 'Compte verrouillé',
   mdp_change: 'Mot de passe changé', mdp_change_refuse: 'Changement de mot de passe refusé', mdp_reinitialise: 'Mot de passe réinitialisé',
   utilisateur_cree: 'Compte créé', utilisateur_modifie: 'Compte modifié', utilisateur_desactive: 'Compte désactivé', utilisateur_reactive: 'Compte réactivé',
-  utilisateur_deverrouille: 'Compte déverrouillé', role_cree: 'Rôle créé', role_modifie: 'Droits modifiés', role_supprime: 'Rôle supprimé', role_reinitialise: 'Rôle remis par défaut', sessions_fermees: 'Sessions fermées', super_admin_cree_console: 'Super admin créé (console serveur)',
+  utilisateur_deverrouille: 'Compte déverrouillé', role_cree: 'Rôle créé', role_modifie: 'Droits modifiés', role_supprime: 'Rôle supprimé', role_reinitialise: 'Rôle remis par défaut', societe_modifiee: 'Société modifiée', fiscalite_ajoutee: 'Taux ajouté', fiscalite_retiree: 'Taux retiré', numerotation_modifiee: 'Numérotation modifiée', sessions_fermees: 'Sessions fermées', super_admin_cree_console: 'Super admin créé (console serveur)',
 };
 const MOTIFS = { inconnu: 'identifiant inconnu', mot_de_passe: 'mot de passe incorrect', verrouille: 'compte verrouillé', desactive: 'compte désactivé', actuel_incorrect: 'mot de passe actuel incorrect' };
 function resumeAudit(l) {
@@ -434,6 +557,9 @@ function resumeAudit(l) {
   }
   if (l.action === 'utilisateur_cree' && l.apres) return `${l.apres.nom_complet} · ${l.apres.roles.map((r) => LIBELLES_ROLES[r] || r).join(', ')}`;
   if (l.entite === 'role') return resumeRole(l);
+  if (l.action === 'societe_modifiee' && l.avant && l.apres) return Object.keys(l.apres).filter((k) => !['version', 'maj_le'].includes(k) && JSON.stringify(l.avant[k]) !== JSON.stringify(l.apres[k])).map((k) => k === 'logo' ? 'logo' : `${k} : ${l.avant[k] || '—'} → ${l.apres[k] || '—'}`).join(' · ') || 'aucun changement';
+  if (l.action === 'fiscalite_ajoutee' && l.apres) return `${l.apres.libelle} : ${l.apres.valeur} ${l.apres.unite} au ${dateFr(l.apres.en_vigueur_le)}`;
+  if (l.action === 'numerotation_modifiee' && l.avant) return `${l.entite_id} : ${l.avant.prefixe}/${l.avant.chiffres} → ${l.apres.prefixe}/${l.apres.chiffres}`;
   if (d.nombre != null) return `${d.nombre} session(s)`;
   return '';
 }
@@ -574,6 +700,36 @@ document.addEventListener('click', async (e) => {
       try { const d = await api('POST', `/api/utilisateurs/${id}/reinitialiser-mdp`); route(); montrerSecret('Nouveau mot de passe provisoire', d.identifiant, d.mot_de_passe_provisoire); }
       catch (x) { toast(x.message, true); } break;
     case 'journal-plus': pageJournal($('#contenu'), true); break;
+    case 'logo-retirer': PS.logo = ''; b.closest('.logo-zone').querySelector('img').outerHTML = '<div class="vide-logo">Pas de logo</div>'; b.remove(); toast('Logo retiré : cliquez sur Enregistrer.'); break;
+    case 'num-enr': {
+      const tr = b.closest('tr'), x = PS.num.find((n) => n.type === b.dataset.type);
+      try { await api('PUT', '/api/parametres/numerotation/' + x.type, { version: x.version, prefixe: tr.querySelector('[name=prefixe]').value, chiffres: +tr.querySelector('[name=chiffres]').value }); toast('Numérotation enregistrée.'); ongletNumerotation($('#p-param')); }
+      catch (e2) { toast(e2.message, true); } break;
+    }
+    case 'fisc-retirer':
+      if (!confirm('Retirer cette valeur à venir ?')) return;
+      try { await api('DELETE', '/api/parametres/fiscalite/' + id); toast('Valeur retirée.'); ongletFiscalite($('#p-param')); } catch (e2) { toast(e2.message, true); } break;
+    case 'fisc-ajout': {
+      const codes = [...new Map(PS.fisc.map((x) => [x.code, x])).values()];
+      fenetre(`<h3>Nouvelle valeur datée</h3><div class="msg err" hidden role="alert"></div>
+        <div class="champ"><label for="fi-code">Taux</label><select id="fi-code" name="code">${codes.map((x) => `<option value="${x.code}">${esc(x.libelle)} (${x.unite})</option>`).join('')}<option value="">Nouveau taux…</option></select></div>
+        <div id="fi-nouveau" hidden><div class="grille2"><div class="champ"><label for="fi-lib">Libellé</label><input id="fi-lib" name="lib" maxlength="80" placeholder="Ex. : TVA taux réduit"></div>
+          <div class="champ"><label for="fi-unite">Unité</label><select id="fi-unite" name="unite"><option>%</option><option>DT</option></select></div></div>
+          <div class="champ"><label for="fi-c">Code interne</label><input id="fi-c" name="c" maxlength="40" placeholder="tva_reduite" autocapitalize="none"></div></div>
+        <div class="grille2"><div class="champ"><label for="fi-val">Valeur</label><input id="fi-val" name="val" inputmode="decimal" required></div>
+          <div class="champ"><label for="fi-date">En vigueur le</label><input id="fi-date" name="date" type="date" required></div></div>
+        <div class="champ"><label for="fi-com">Commentaire (ex. : loi de finances, validé par le comptable)</label><input id="fi-com" name="com" maxlength="300"></div>
+        <div class="pied"><button class="btn ghost" value="annuler" formnovalidate>Annuler</button><button class="btn" value="ok">Ajouter</button></div>`, async (f) => {
+        const nouveau = !f.code.value;
+        const val = Number(String(f.val.value).replace(',', '.'));
+        if (!Number.isFinite(val)) throw new Error('Saisissez une valeur numérique.');
+        if (!f.date.value) throw new Error('Indiquez la date d’entrée en vigueur.');
+        const r = await api('POST', '/api/parametres/fiscalite', { code: nouveau ? f.c.value.trim() : f.code.value, ...(nouveau ? { libelle: f.lib.value.trim(), unite: f.unite.value } : {}), valeur: val, en_vigueur_le: f.date.value, commentaire: f.com.value.trim() });
+        toast(r.avertissement || 'Valeur ajoutée.'); ongletFiscalite($('#p-param'));
+      });
+      $('#fi-code').onchange = (e) => { $('#fi-nouveau').hidden = !!e.target.value; };
+      break;
+    }
     case 'role-ouvrir': ouvrirRole(id); break;
     case 'mod-tout': case 'mod-rien': case 'mod-lecture': reglerModule(b.dataset.mod, b.dataset.act.slice(4)); break;
     case 'role-annuler': RS.modifie = false; ouvrirRole(RS.id); break;

@@ -15,7 +15,7 @@ const appel = (method, url, { jeton, body, poste } = {}) => app.inject({
 const connexion = (identifiant, mot_de_passe) => appel('POST', '/api/auth/connexion', { body: { identifiant, mot_de_passe } });
 
 test.before(async () => {
-  await pool.query('drop schema if exists noyau cascade; drop table if exists public.migrations');
+  await require('./_base').viderBase();
   await migrer(pool, { info: () => {} });
   app = construire({ logger: false, limiteConnexion: 1000 });
   await app.ready();
