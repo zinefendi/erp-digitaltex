@@ -61,7 +61,7 @@ async function ecritures(db, du, au) {
     const L = lignes.filter((l) => r3(l.debit) || r3(l.credit)).map((l) => ({ ...l, debit: r3(l.debit), credit: r3(l.credit) }));
     if (L.length) E.push({ journal, date, piece, libelle, lignes: L });
   };
-  // Ventes : une écriture par facture émise (une facture annulée n'est pas comptabilisée ; l'avoir arrive au lot 4)
+  // Ventes : une écriture par facture émise (une facture annulée n'est pas comptabilisée ; les avoirs suivent, 0.9.0)
   for (const f of await facturesClients(db)) {
     if (f.status === 'annulee' || !dans(f.date)) continue;
     const { t } = etatFacture(f); const dev = devise(f);
@@ -74,6 +74,19 @@ async function ecritures(db, du, au) {
       { compte: P.ventes_prestations, debit: 0, credit: presta, devise: dev },
       { compte: P.tva_collectee, debit: 0, credit: t.tva, devise: dev },
       { compte: P.timbre, debit: 0, credit: t.timbre, devise: dev },
+    ]);
+  }
+  // 0.9.0 : avoirs émis — écriture inverse de la vente (client au crédit, ventes / TVA au débit)
+  const av = (await db.query(`select numero, to_char(date, 'YYYY-MM-DD') d, client, devise, type_client, lignes, ht::float8 ht, montant_tva::float8 tva, net::float8 net, facture_num
+    from ventes.documents where type = 'avoir' and statut = 'emis' and date between $1 and $2 order by date, id`, [du, au])).rows;
+  for (const a of av) {
+    const presta = r3((a.lignes || []).filter((l) => l.service).reduce((s, l) => s + (+l.total_ht || 0), 0));
+    const export_ = a.type_client === 'export' || a.devise !== 'DT';
+    ecr('VE', a.d, a.numero, `Avoir ${a.numero} sur ${a.facture_num} ${a.client?.name || ''}`.trim(), [
+      { compte: export_ ? P.ventes_export : P.ventes_produits, debit: r3(a.ht - presta), credit: 0, devise: a.devise },
+      { compte: P.ventes_prestations, debit: presta, credit: 0, devise: a.devise },
+      { compte: P.tva_collectee, debit: a.tva, credit: 0, devise: a.devise },
+      { compte: P.clients, tiers: a.client?.name || '', debit: 0, credit: a.net, devise: a.devise },
     ]);
   }
   // Encaissements clients (hors annulés) : banque / caisse au débit, client au crédit, retenue subie au débit 4351
@@ -574,6 +587,13 @@ module.exports = async function routesCompta(app) {
       v.factures++; v.ht = r3(v.ht + e.t.ht); v.tva = r3(v.tva + e.t.tva); v.net = r3(v.net + e.t.net);
       v.regle = r3(v.regle + e.regle); v.reste = r3(v.reste + e.reste);
     }
+    // 0.9.0 : avoirs émis, déduits du chiffre d'affaires de leur devise
+    for (const a of (await pool.query(`select devise, ht::float8 ht, montant_tva::float8 tva, net::float8 net from ventes.documents
+        where type = 'avoir' and statut = 'emis' and date between $1 and $2`, [du, au])).rows) {
+      const v = ventes[a.devise] ||= { devise: a.devise, factures: 0, ht: 0, tva: 0, net: 0, regle: 0, reste: 0 };
+      v.avoirs = (v.avoirs || 0) + 1; v.avoirs_net = r3((v.avoirs_net || 0) + a.net);
+      v.ht = r3(v.ht - a.ht); v.tva = r3(v.tva - a.tva); v.net = r3(v.net - a.net);
+    }
     const achats = {};
     const ff = (await pool.query(`select devise, ht::float8 ht, tva::float8 tva, net::float8 net, statut from compta.factures_fournisseurs
       where date between $1 and $2`, [du, au])).rows;
@@ -591,6 +611,12 @@ module.exports = async function routesCompta(app) {
     for (const f of (await facturesClients(pool)).filter((x) => x.date >= du && x.date <= au).sort((a, b) => (a.number || '').localeCompare(b.number || ''))) {
       const e = etatFacture(f);
       L.push([f.date, f.number, f.client?.name || '', f.client?.mf || '', devise(f), e.t.ht, +f.tva || 0, e.t.tva, e.t.timbre, e.t.net, f.status === 'annulee' ? 0 : e.regle, f.status === 'annulee' ? 0 : e.reste, f.due || '', f.export ? 'oui' : 'non', f.status === 'annulee' ? 'annulée' : 'émise']);
+    }
+    // 0.9.0 : avoirs (montants négatifs), pour un journal des ventes complet
+    for (const a of (await pool.query(`select numero, to_char(date, 'YYYY-MM-DD') d, client, devise, tva::float8 taux, ht::float8 ht, montant_tva::float8 tva, net::float8 net, facture_num, statut, type_client
+        from ventes.documents where type = 'avoir' and date between $1 and $2 order by numero`, [du, au])).rows) {
+      const z = a.statut === 'annule';
+      L.push([a.d, a.numero + ' (avoir sur ' + a.facture_num + ')', a.client?.name || '', a.client?.mf || '', a.devise, z ? 0 : -a.ht, a.taux, z ? 0 : -a.tva, 0, z ? 0 : -a.net, 0, 0, '', a.type_client === 'export' ? 'oui' : 'non', z ? 'avoir annulé' : 'avoir']);
     }
     await S.auditer(pool, req, 'export_comptable', { entite: 'export', entiteId: 'ventes', details: { du, au, format: req.query.format || 'xlsx', lignes: L.length - 1 } });
     return envoyerTableau(reply, `journal-ventes-${du}-${au}`, req.query.format, [{ nom: 'Journal des ventes', lignes: L }]);

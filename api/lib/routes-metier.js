@@ -9,6 +9,7 @@ const { pool, transaction } = require('./db');
 const S = require('./securite');
 const D = require('./droits');
 const P = require('./prix-studio');
+const V = require('./ventes');
 
 const GLB_DIR = process.env.ERP_GLB_DIR || '/data/glb';
 const FACTORY = process.env.ERP_CATALOGUE_USINE || '/data/catalogue-usine.json';
@@ -188,37 +189,32 @@ module.exports = async function routesMetier(app) {
       if (avant && col === 'invoices') {
         if (avant.status === 'annulee') return erreur(reply, 400, 'facture_annulee', 'Une facture annulée ne se modifie plus.');
         // les règlements issus d'un encaissement de la comptabilité (lettrage) ne se modifient que depuis la comptabilité
-        const deCompta = (avant.payments || []).filter((p) => p && p.enc);
-        rec = { ...rec, payments: [...(rec.payments || []).filter((p) => p && !p.enc), ...deCompta] };
-        if (rec.status === 'annulee' && deCompta.length) return erreur(reply, 400, 'facture_lettree', 'Cette facture a des encaissements enregistrés en comptabilité : annulez-les d’abord (Comptabilité clients › Encaissements).');
+        // 0.9.0 : idem pour les imputations d'avoirs (elles ne se modifient que par l'avoir lui-même)
+        const deCompta = (avant.payments || []).filter((p) => p && (p.enc || p.avoir));
+        rec = { ...rec, payments: [...(rec.payments || []).filter((p) => p && !p.enc && !p.avoir), ...deCompta] };
+        if (rec.status === 'annulee' && avant.status !== 'annulee') {
+          const av = (await c.query(`select string_agg(numero, ', ') n from ventes.documents where type = 'avoir' and facture_id = $1 and statut = 'emis'`, [avant.id])).rows[0].n;
+          if (av) return erreur(reply, 400, 'facture_avec_avoir', `Cette facture a déjà un avoir (${av}) : elle ne s’annule plus, établissez un avoir pour le reste.`);
+        }
+        if (rec.status === 'annulee' && deCompta.some((p) => p.enc)) return erreur(reply, 400, 'facture_lettree', 'Cette facture a des encaissements enregistrés en comptabilité : annulez-les d’abord (Comptabilité clients › Encaissements).');
         if (rec.status === 'annulee' && !D.peut(req.droits, 'commercial.factures', 'annuler')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas d’annuler une facture.');
         if (avant.number && rec.number !== avant.number) return erreur(reply, 400, 'numero_fige', 'Le numéro d’une facture ne change pas.');
       }
       if (avant && col === 'orders' && rec.status === 'annulee' && avant.status !== 'annulee' && !D.peut(req.droits, 'commercial.commandes', 'annuler')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas d’annuler une commande.');
       if (col === 'invoices' && !avant && !rec.number) return erreur(reply, 400, 'numero_absent', 'Une facture doit avoir un numéro officiel.');
-      if (col === 'invoices' && !avant) rec = { ...rec, payments: (rec.payments || []).filter((p) => p && !p.enc) };
-            // 0.8.0 : contrôle vente à perte sur les lignes de produits finis (prix < PRI → confirmation obligatoire, tracée dans l'audit)
+      if (col === 'invoices' && !avant) rec = { ...rec, payments: (rec.payments || []).filter((p) => p && !p.enc && !p.avoir) };
+      // 0.8.0 / 0.9.0 : contrôle vente à perte sur les lignes de produits finis (prix < PRI → confirmation obligatoire,
+      // tracée dans l'audit). En devise : prix × taux de change mémorisé (sans taux, pas de comparaison possible).
       if (!sansPrix && (col === 'orders' || col === 'invoices') && Array.isArray(rec.lines)) {
-        const refs = [...new Set(rec.lines.map((l) => String(l.article || '')).filter((a) => /^[A-Z]+[0-9]{3}[0-9]{2}[BEFHU]$/.test(a)))];
-        if (refs.length) {
-          const pf = (await c.query('select reference, pri::float8 pri from pf.produits where reference = any($1) and annule = false', [refs])).rows;
-          const pris = Object.fromEntries(pf.map((p) => [p.reference, p.pri]));
-          const ttc = col === 'invoices' ? rec.pricesTTC !== false : true;
-          const tva = col === 'invoices' ? (+rec.tva || 0) : 19;
-          const enPerte = [];
-          for (const l of rec.lines) {
-            const pri = pris[String(l.article || '')];
-            if (!pri) continue;
-            const puHt = ttc ? (+l.pu || 0) * (1 - (+l.remise || 0) / 100) / (1 + tva / 100) : (+l.pu || 0) * (1 - (+l.remise || 0) / 100);
-            if (puHt < pri - 0.0005) enPerte.push(l.article);
-          }
-          if (enPerte.length && !req.body.confirmer_perte) {
-            return erreur(reply, 409, 'vente_a_perte', `Attention : vente à perte sur ${enPerte.join(', ')} (prix de revient inférieur au prix de vente). Cochez la confirmation pour enregistrer.`);
-          }
-          if (enPerte.length) await S.auditer(c, req, 'vente_a_perte_confirmee', { entite: col === 'orders' ? 'commande' : 'facture', entiteId: rec.id || '', details: { lignes: enPerte } });
+        const dev = ['EUR', 'USD'].includes(rec.currency) ? rec.currency : 'DT';
+        const tvaN = col === 'invoices' ? (+rec.tva || 0) : (dev === 'DT' ? Number((await c.query("select coalesce(parametres.taux_a('tva_normale', current_date), 19) v")).rows[0].v) : 0);
+        const enPerte = await V.lignesEnPerte(c, rec.lines, { ttc: rec.pricesTTC !== false && dev === 'DT', tva: tvaN, devise: dev, taux: +rec.taux_change || 0 }, (l) => l.article);
+        if (enPerte.length && !req.body.confirmer_perte) {
+          return erreur(reply, 409, 'vente_a_perte', `Attention : vente à perte sur ${[...new Set(enPerte.map((p) => p.ref))].join(', ')} (prix de vente inférieur au prix de revient). Cochez la confirmation pour enregistrer.`);
         }
+        if (enPerte.length) await S.auditer(c, req, 'vente_a_perte_confirmee', { entite: col === 'orders' ? 'commande' : 'facture', entiteId: rec.id || '', details: { lignes: enPerte } });
       }
-rec.id ||= rid();
+      rec.id ||= rid();
       rec.updatedAt = new Date().toISOString(); rec.createdAt ||= avant?.createdAt || rec.updatedAt;
       await c.query(`insert into commercial.documents (collection, id, donnees, maj_par) values ($1, $2, $3, $4)
         on conflict (collection, id) do update set donnees = excluded.donnees, maj_le = now(), maj_par = excluded.maj_par`, [col, rec.id, rec, req.utilisateur.id]);

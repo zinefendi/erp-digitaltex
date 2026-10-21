@@ -157,7 +157,7 @@ module.exports = async function routesParametres(app) {
   // État de chaque module (lot du calendrier) et compteurs utiles — sans montant si non autorisé.
   const LOTS = {
     infographie: { lot: 3, etat: 'Studio 3D et catalogue en réseau · Lookbook au lot 10', actif: true },
-    commercial: { lot: 4, etat: 'Clients, commandes, BL, factures, articles hors Studio · devis, proformas, avoirs au lot 4', actif: true },
+    commercial: { lot: 4, etat: 'Devis, proformas, commandes, BL, factures, avoirs, export FR/EN, produits finis', actif: true },
     compta_clients: { lot: 8, etat: 'Encours, encaissements et lettrage, relances, exports CSV / Excel', actif: true },
     compta_fournisseurs: { lot: 8, etat: 'Factures et règlements fournisseurs, balance âgée, exports · commandes d’achat au lot 6', actif: true },
     paie: { lot: 9, etat: 'Prévu au lot 9' },
