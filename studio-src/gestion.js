@@ -25,8 +25,31 @@ const invChip = (i) => { const s = invoiceState(i); return chip(s === 'partielle
 let ART = [];
 async function loadArticles() { if (D.articles) { try { ART = (await D.articles()).filter((a) => a.actif); } catch (e) { ART = []; } } }
 const artTTC = (a) => r3((+a.prix_ht || 0) * (1 + (+a.tva || 0) / 100));
+// 0.10.1 : saisie par référence (produits finis + articles), banques tunisiennes, prix affichés H.T.
+let REFS = [], BANKS = [];
+async function loadRefs() {
+  const [P, C] = await Promise.all([D.produits ? D.produits() : [], D.codesArticle ? D.codesArticle() : []]);
+  const lib = Object.fromEntries((C || []).map((c) => [c.code, c.libelle]));
+  REFS = [...(P || []).map((p) => ({ ref: p.reference, designation: [lib[p.code_article] || p.code_article, p.client_nom].filter(Boolean).join(' · '), type: 'Produit fini', ht: p.prix_ht ?? null, service: false })),
+    ...ART.map((a) => ({ ref: a.code, designation: a.designation, type: a.type === 'prestation' ? 'Prestation' : 'Article', ht: a.prix_ht ?? null, service: a.type === 'prestation', artType: a.type, unite: a.unite }))];
+}
+async function loadBanks() { try { BANKS = D.banques ? (await D.banques()).filter((b) => b.actif !== false) : []; } catch (_) { BANKS = []; } }
+const bankName = (c) => (BANKS.find((b) => b.code === c) || {}).nom || c || '';
+const bankOpts = (v = '') => `<option value="">Banque…</option>${BANKS.map((b) => `<option value="${esc(b.code)}" ${b.code === v ? 'selected' : ''}>${esc(b.nom)}</option>`).join('')}`;
+// commandes stockées en TTC (format Studio) : coefficient TTC → H.T. d'une ligne
+const kTTC = (l) => (1 + (+G.tva || 0) / 100) * (l && (l.service || l.artType === 'prestation') ? 1 : 1 + (+G.fodec || 0) / 100);
+const puHTo = (l) => r3((+l.pu || 0) / kTTC(l));
+const studioIds = (o) => new Set(((o && o.lines) || []).filter((l) => l.src === 'studio').map((l) => l.id));
+const ficheAttr = (ref, oid) => `data-fiche="${esc(ref || '')}" data-fo="${esc(oid || '')}" title="Double-clic : fiche technique"`;
+async function upScan(id, input) {
+  const f = input && input.files && input.files[0]; if (!f) return null;
+  if (!D.fichiers) throw new Error('Envoi de fichiers indisponible.');
+  busy('Envoi du scan…'); try { const r = await D.fichiers.envoyer('scan_paiement', 'reglement', id, f); return { id: r.id, nom: r.nom }; } finally { busy(false); }
+}
+const scanCell = (p) => (p.scan ? `<button class="btn sm ghost" data-scan="${esc(p.scan.id)}" title="${esc(p.scan.nom || '')}">Scan</button>` : '');
 async function load() {
-  [db, cat] = await Promise.all([D.db.get(), D.catalogue.get().then((r) => r.catalogue), loadArticles()]);
+  [db, cat] = await Promise.all([D.db.get(), D.catalogue.get().then((r) => r.catalogue), loadArticles(), loadBanks()]);
+  await loadRefs().catch(() => { REFS = []; });
   G = gset(cat); CO = cat.company || {};
   render();
 }
@@ -91,13 +114,15 @@ function orderDetail(o) {
   const t = orderTotal(o), adv = advancesTotal(o), del = delivered(db, o), inv = invoicedLines(db, o), st = orderState(db, o), locked = st === 'annulee';
   const bls = db.bls.filter((b) => b.orderId === o.id), invs = db.invoices.filter((i) => i.orderId === o.id);
   const ds = deliveryState(db, o);
-  const lines = (o.lines || []).map((l, i) => `<tr><td>${esc(l.designation)}${l.src === 'studio' ? '' : ' <span class="tag">ajout</span>'}</td><td>${esc(l.staff || '')}</td><td>${esc(l.color || '')}</td><td>${esc(l.size || '')}</td>
-      <td class="n"><input type="number" min="0" step="1" data-ol="${i}" data-k="qty" value="${+l.qty || 0}" ${locked ? 'disabled' : ''}></td>
-      <td class="n"><input type="number" min="0" step="0.001" data-ol="${i}" data-k="pu" value="${r3(l.pu)}" ${locked ? 'disabled' : ''}></td>
-      <td class="n b">${dt((+l.qty || 0) * (+l.pu || 0))}</td><td class="n mute">${l.service ? '—' : (del[l.id] || 0)}</td><td class="n mute">${inv[l.id] || 0}</td>
-      <td>${locked ? '' : `<button class="ib" data-oldel="${i}" title="Supprimer la ligne">✕</button>`}</td></tr>`).join('');
+  const htT = r3((o.lines || []).reduce((s, l) => s + (+l.qty || 0) * puHTo(l), 0));
+  const lines = (o.lines || []).map((l, i) => { const st = l.src === 'studio';
+    return `<tr ${ficheAttr(l.article || l.ref, o.id)}><td class="mono small">${esc(l.article || l.ref || '')}</td><td>${esc(l.designation)}${st ? ' <span class="tag" title="Saisie en Infographie : seul le prix se modifie">infographie</span>' : ''}</td><td>${esc(l.staff || '')}</td><td>${esc(l.color || '')}</td><td>${esc(l.size || '')}</td>
+      <td class="n"><input type="number" min="0" step="1" data-ol="${i}" data-k="qty" value="${+l.qty || 0}" ${locked || st ? 'disabled' : ''}></td>
+      <td class="n"><input type="number" min="0" step="0.001" data-ol="${i}" data-k="pu" value="${puHTo(l)}" ${locked ? 'disabled' : ''}></td>
+      <td class="n b">${dt((+l.qty || 0) * puHTo(l))}</td><td class="n mute">${l.service ? '—' : (del[l.id] || 0)}</td><td class="n mute">${inv[l.id] || 0}</td>
+      <td>${locked || st ? '' : `<button class="ib" data-oldel="${i}" title="Supprimer la ligne">✕</button>`}</td></tr>`; }).join('');
   return `<div class="dh"><div><h2>Commande ${esc(o.number)}</h2>${chip(st)} <span class="mute">Livraison : ${ds.done}/${ds.tot} pièces</span></div>
-    <div class="row">${locked ? '' : `<button class="btn" data-act="newbl" ${ds.state === 'done' || ds.state === 'none' ? 'disabled' : ''}>+ Bon de livraison</button><button class="btn" data-act="newinv">+ Facture</button>`}
+    <div class="row">${locked ? '' : `<button class="btn" data-act="newbl" ${ds.state === 'done' || ds.state === 'none' ? 'disabled' : ''}>+ Bon de livraison</button><button class="btn" data-act="newinv">+ Facture</button><button class="btn ghost" data-act="fichejoin">Joindre une fiche technique</button>`}<button class="btn ghost" data-act="ficheopen">Fiche technique</button>
     <button class="btn ghost" data-act="${locked ? 'reopen' : 'cancelorder'}">${locked ? 'Rétablir' : 'Annuler la commande'}</button></div></div>
     <div class="g4">
       <label>Client<input data-of="client" value="${esc(o.client.name)}" list="cl" autocomplete="off" ${locked ? 'disabled' : ''}><datalist id="cl">${db.clients.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist></label>
@@ -105,13 +130,13 @@ function orderDetail(o) {
       <label>Date de création<input data-date data-of="date" value="${esc(o.date)}" required ${locked ? 'disabled' : ''}></label>
       <label>Livraison voulue<input data-date data-of="delivery" value="${esc(o.delivery || '')}" data-min="${esc(o.date)}" ${locked ? 'disabled' : ''}></label></div>
     <h3>Lignes de la commande</h3>
-    <table class="t ed"><thead><tr><th>Désignation</th><th>Staff</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th><th class="n">P.U. TTC</th><th class="n">Total</th><th class="n">Livré</th><th class="n">Facturé</th><th></th></tr></thead>
-      <tbody>${lines || '<tr><td colspan="10" class="mute">Aucune ligne.</td></tr>'}</tbody>
-      <tfoot><tr><td colspan="6">${locked ? '' : '<button class="btn sm ghost" data-act="addline">+ Ajouter une ligne (transport, retouche, article…)</button>'}</td><td class="n b">${M(t)}</td><td colspan="3"></td></tr></tfoot></table>
+    <table class="t ed"><thead><tr><th>Réf.</th><th>Désignation</th><th>Service</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th><th class="n">PRIX H.T.</th><th class="n">Total H.T.</th><th class="n">Livré</th><th class="n">Facturé</th><th></th></tr></thead>
+      <tbody>${lines || '<tr><td colspan="11" class="mute">Aucune ligne.</td></tr>'}</tbody>
+      <tfoot><tr><td colspan="7">${locked ? '' : '<button class="btn sm ghost" data-act="addline">+ Ajouter une ligne (référence, transport, retouche…)</button>'}</td><td class="n b">${M(htT)}<div class="mute small">TTC ${M(t)}</div></td><td colspan="3"></td></tr></tfoot></table>
     <h3>Avances <span class="mute">${M(adv)} reçu${adv ? 'es' : 'e'} · reste ${M(Math.max(0, t - adv))}</span></h3>
-    ${(o.advances || []).length ? `<table class="t"><thead><tr><th>Date</th><th class="n">Montant</th><th>Mode</th><th>Référence</th><th>Reçu</th><th></th></tr></thead><tbody>${o.advances.map((a, i) => `<tr><td>${isoToFr(a.date)}</td><td class="n b">${M(a.amount)}</td><td>${esc(a.mode)}</td><td>${esc(a.ref || '')}</td><td>${esc(a.receipt || '')}</td>
-      <td class="r"><button class="btn sm ghost" data-advpdf="${i}">Reçu PDF</button>${locked ? '' : `<button class="ib" data-advdel="${i}" title="Supprimer">✕</button>`}</td></tr>`).join('')}</tbody></table>` : '<p class="mute">Aucune avance.</p>'}
-    ${locked ? '' : `<div class="advf"><input type="number" min="0" step="0.001" id="advamt" placeholder="Montant"><select id="advmode">${G.paymentModes.map((m) => `<option>${esc(m)}</option>`).join('')}</select><input data-date id="advdate" value="${isoToday()}" required><input id="advref" placeholder="N° chèque / virement"><button class="btn sm" data-act="advadd">+ Ajouter l’avance</button>
+    ${(o.advances || []).length ? `<table class="t"><thead><tr><th>Date</th><th class="n">Montant</th><th>Mode</th><th>N° document</th><th>Banque</th><th>Échéance</th><th>Reçu</th><th></th></tr></thead><tbody>${o.advances.map((a, i) => `<tr><td>${isoToFr(a.date)}</td><td class="n b">${M(a.amount)}</td><td>${esc(a.mode)}</td><td>${esc(a.ref || '')}</td><td>${esc(bankName(a.bank))}</td><td>${a.due ? isoToFr(a.due) : ''}</td><td>${esc(a.receipt || '')}</td>
+      <td class="r">${scanCell(a)}<button class="btn sm ghost" data-advpdf="${i}">Reçu PDF</button>${locked ? '' : `<button class="ib" data-advdel="${i}" title="Supprimer">✕</button>`}</td></tr>`).join('')}</tbody></table>` : '<p class="mute">Aucune avance.</p>'}
+    ${locked ? '' : `<div class="advf"><input type="number" min="0" step="0.001" id="advamt" placeholder="Montant"><select id="advmode">${G.paymentModes.map((m) => `<option>${esc(m)}</option>`).join('')}</select><input data-date id="advdate" value="${isoToday()}" required><input id="advref" placeholder="N° chèque / effet / virement"><select id="advbank">${bankOpts()}</select><input data-date id="advdue" value="" placeholder="Échéance"><label class="btn sm ghost filep">Scan<input type="file" id="advscan" accept="image/*,application/pdf" capture="environment" hidden></label><button class="btn sm" data-act="advadd">+ Ajouter l’avance</button>
       ${t ? [30, 50, 100].map((k) => `<button class="chipb" data-advpct="${k}">${k} %</button>`).join('') : ''}</div>`}
     <div class="cols2"><section><h3>Bons de livraison</h3>${bls.length ? `<table class="t"><tbody>${bls.map((b) => `<tr data-open="bls:${b.id}"><td><b>${esc(b.number)}</b></td><td>${isoToFr(b.date)}</td><td>${(b.lines || []).reduce((s, l) => s + (+l.qty || 0), 0)} pcs</td><td>${chip(b.status || 'livre')}</td></tr>`).join('')}</tbody></table>` : '<p class="mute">Aucun BL.</p>'}</section>
       <section><h3>Factures</h3>${invs.length ? `<table class="t"><tbody>${invs.map((i) => `<tr data-open="invoices:${i.id}"><td><b>${esc(i.number)}</b></td><td>${isoToFr(i.date)}</td><td class="n">${M(invoiceTotals(i).net)}</td><td>${i.status === 'annulee' ? chip('annulee') : invChip(i)}</td></tr>`).join('')}</tbody></table>` : '<p class="mute">Aucune facture.</p>'}</section></div>
@@ -122,12 +147,12 @@ function orderDetail(o) {
 function blsView() {
   const L = db.bls.slice().sort((a, b) => String(b.date + b.number).localeCompare(String(a.date + a.number))).filter((b) => !q || norm([b.number, b.orderNumber, b.clientPO, b.client.name].join(' ')).includes(norm(q))).filter((b) => !flt || (b.status || 'livre') === flt);
   const b = db.bls.find((x) => x.id === selId);
-  return `<div class="split"><aside class="list"><div class="lh">${toolbar('Rechercher : n° BL, commande, client…', [['livre', 'Livré'], ['annule', 'Annulé']])}</div>
-    ${L.length ? L.map((x) => `<button class="li ${x.id === selId ? 'on' : ''}" data-sel="${x.id}"><div><b>${esc(x.number)}</b>${chip(x.status || 'livre')}</div><div>${esc(x.client.name)}</div><small>${isoToFr(x.date)} · commande ${esc(x.orderNumber)} · ${(x.lines || []).reduce((s, l) => s + (+l.qty || 0), 0)} pcs</small></button>`).join('') : '<p class="empty">Aucun bon de livraison.<br><small>Créez-les depuis une commande (« + Bon de livraison »).</small></p>'}</aside>
-    <section class="detail">${b ? `<div class="dh"><div><h2>Bon de livraison ${esc(b.number)}</h2>${chip(b.status || 'livre')}</div><div class="row"><button class="btn" data-act="blpdf">PDF</button>${b.status === 'annule' ? '' : `<button class="btn ghost" data-act="blinv" ${db.invoices.some((i) => i.status !== 'annulee' && (i.blIds || []).includes(b.id)) ? 'disabled title="Déjà facturé"' : ''}>Facturer ce BL</button><button class="btn ghost" data-act="blcancel">Annuler le BL</button>`}</div></div>
+  return `<div class="split"><aside class="list"><div class="lh">${toolbar('Rechercher : n° BL, commande, client…', [['livre', 'Livré'], ['annule', 'Annulé']])}<button class="btn sm" data-act="freebl">+ Bon de livraison</button></div>
+    ${L.length ? L.map((x) => `<button class="li ${x.id === selId ? 'on' : ''}" data-sel="${x.id}"><div><b>${esc(x.number)}</b>${chip(x.status || 'livre')}</div><div>${esc(x.client.name)}</div><small>${isoToFr(x.date)} · commande ${esc(x.orderNumber)} · ${(x.lines || []).reduce((s, l) => s + (+l.qty || 0), 0)} pcs</small></button>`).join('') : '<p class="empty">Aucun bon de livraison.<br><small>Créez-les depuis une commande ou directement (« + Bon de livraison »).</small></p>'}</aside>
+    <section class="detail">${b ? `<div class="dh"><div><h2>Bon de livraison ${esc(b.number)}</h2>${chip(b.status || 'livre')}</div><div class="row"><button class="btn" data-act="blpdf">PDF</button>${b.status === 'annule' ? '' : `<button class="btn ghost" data-act="blinv" ${db.invoices.some((i) => i.status !== 'annulee' && (i.blIds || []).includes(b.id)) ? 'disabled title="Déjà facturé"' : ''}>Convertir en facture</button><button class="btn ghost" data-act="blcancel">Annuler le BL</button>`}</div></div>
       <div class="kv"><span>Date</span><b>${isoToFr(b.date)}</b><span>Client</span><b>${esc(b.client.name)}</b><span>Commande</span><b><button class="linkb" data-open="orders:${b.orderId}">${esc(b.orderNumber)}</button></b><span>BC client</span><b>${esc(b.clientPO || '—')}</b></div>
       ${blEditable(b) ? '<p class="hint">Ce BL n’est pas encore facturé : vous pouvez corriger une quantité ou supprimer une ligne (le reste redevient « à livrer »).</p>' : ''}
-      <table class="t ed"><thead><tr><th>Désignation</th><th>Staff</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th><th></th></tr></thead><tbody>${(b.lines || []).map((l, k) => `<tr><td>${esc(l.designation)}</td><td>${esc(l.staff || '')}</td><td>${esc(l.color || '')}</td><td>${esc(l.size || '')}</td>
+      <table class="t ed"><thead><tr><th>Réf.</th><th>Désignation</th><th>Service</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th><th></th></tr></thead><tbody>${(b.lines || []).map((l, k) => `<tr ${ficheAttr(l.article, b.orderId)}><td class="mono small">${esc(l.article || '')}</td><td>${esc(l.designation)}</td><td>${esc(l.staff || '')}</td><td>${esc(l.color || '')}</td><td>${esc(l.size || '')}</td>
         <td class="n b">${blEditable(b) ? `<input type="number" min="1" step="1" data-bll="${k}" value="${l.qty}">` : l.qty}</td><td>${blEditable(b) ? `<button class="ib" data-bldel="${k}" title="Supprimer la ligne">✕</button>` : ''}</td></tr>`).join('')}</tbody></table>
       ${b.note ? `<p class="mute">Observations : ${esc(b.note)}</p>` : ''}` : '<p class="empty">Sélectionnez un bon de livraison.</p>'}</section></div>`;
 }
@@ -137,8 +162,8 @@ function invoicesView() {
   const L = db.invoices.slice().sort((a, b) => String(b.date + b.number).localeCompare(String(a.date + a.number))).filter((i) => !q || norm([i.number, i.orderNumber, i.clientPO, i.client.name].join(' ')).includes(norm(q)))
     .filter((i) => !flt || (flt === 'annulee' ? i.status === 'annulee' : i.status !== 'annulee' && invoiceState(i) === flt));
   const i = db.invoices.find((x) => x.id === selId);
-  return `<div class="split"><aside class="list"><div class="lh">${toolbar('Rechercher : n° facture, client, BC…', [['impayee', 'Non payée'], ['partielle', 'Payée en partie'], ['payee', 'Payée'], ['annulee', 'Annulée']])}<button class="btn sm" data-act="freeinv">+ Facture libre</button></div>
-    ${L.length ? L.map((x) => { const X = invoiceTotals(x); return `<button class="li ${x.id === selId ? 'on' : ''}" data-sel="${x.id}"><div><b>${esc(x.number)}</b>${x.status === 'annulee' ? chip('annulee') : invChip(x)}</div><div>${esc(x.client.name)}</div><small>${isoToFr(x.date)} · ${money(X.net, cur(x))}${x.status !== 'annulee' && paidOf(x) && invoiceState(x) !== 'payee' ? ' · reste ' + money(X.net - paidOf(x), cur(x)) : ''}</small></button>`; }).join('') : '<p class="empty">Aucune facture.<br><small>Créez-les depuis une commande ou un BL, ou « + Facture libre ».</small></p>'}</aside>
+  return `<div class="split"><aside class="list"><div class="lh">${toolbar('Rechercher : n° facture, client, BC…', [['impayee', 'Non payée'], ['partielle', 'Payée en partie'], ['payee', 'Payée'], ['annulee', 'Annulée']])}<button class="btn sm" data-act="freeinv">+ Facture</button></div>
+    ${L.length ? L.map((x) => { const X = invoiceTotals(x); return `<button class="li ${x.id === selId ? 'on' : ''}" data-sel="${x.id}"><div><b>${esc(x.number)}</b>${x.status === 'annulee' ? chip('annulee') : invChip(x)}</div><div>${esc(x.client.name)}</div><small>${isoToFr(x.date)} · ${money(X.net, cur(x))}${x.status !== 'annulee' && paidOf(x) && invoiceState(x) !== 'payee' ? ' · reste ' + money(X.net - paidOf(x), cur(x)) : ''}</small></button>`; }).join('') : '<p class="empty">Aucune facture.<br><small>Créez-les depuis une commande ou un BL, ou « + Facture ».</small></p>'}</aside>
     <section class="detail">${i ? invoiceDetail(i) : '<p class="empty">Sélectionnez une facture.</p>'}</section></div>`;
 }
 function invoiceDetail(i) {
@@ -148,13 +173,13 @@ function invoiceDetail(i) {
     ${!off && !invEditable(i) ? '<p class="hint">Facture réglée (règlement ou avoir) : ses lignes ne se modifient plus — corrigez par un avoir (Commercial › Avoirs).</p>' : ''}
     <div class="kv"><span>Date</span><b>${isoToFr(i.date)}</b><span>Échéance</span><b class="${!off && rest > 0 && i.due < isoToday() ? 'r' : ''}">${isoToFr(i.due)}</b><span>Client</span><b>${esc(i.client.name)}</b>
       <span>Commande</span><b>${i.orderId ? `<button class="linkb" data-open="orders:${i.orderId}">${esc(i.orderNumber)}</button>` : '—'}</b><span>BL</span><b>${esc((i.blNumbers || []).join(', ') || '—')}</b><span>BC client</span><b>${esc(i.clientPO || '—')}</b>${i.export ? `<span>Vente</span><b>Exportation · ${esc(C)}${i.incoterm ? ' · ' + esc(i.incoterm) : ''}</b>` : ''}${i.ttnRef ? `<span>Réf. TTN</span><b>${esc(i.ttnRef)}</b>` : ''}</div>
-    <table class="t"><thead><tr><th>Désignation</th><th class="n">Qté</th><th class="n">P.U. HT</th><th class="n">Remise</th><th class="n">Total HT</th></tr></thead><tbody>${X.lines.map((l) => `<tr><td>${esc(l.designation)}</td><td class="n">${l.qty}</td><td class="n">${dt(l.puHT)}</td><td class="n">${l.remise ? l.remise + ' %' : ''}</td><td class="n b">${dt(l.totHT)}</td></tr>`).join('')}</tbody></table>
-    <div class="tot"><div><span>Total HT</span><b>${M(X.ht)}</b></div>${X.fodec ? `<div><span>FODEC ${+i.fodec} %</span><b>${M(X.fodec)}</b></div>` : ''}<div><span>TVA ${i.tva} %</span><b>${M(X.tva)}</b></div><div><span>Total TTC</span><b>${M(X.ttc)}</b></div>${X.timbre ? `<div><span>Timbre</span><b>${M(X.timbre)}</b></div>` : ''}<div class="big"><span>Net à payer</span><b>${M(X.net)}</b></div>
+    <table class="t"><thead><tr><th>Réf.</th><th>Désignation</th><th class="n">Qté</th><th class="n">PRIX H.T.</th><th class="n">Remise</th><th class="n">Total H.T.</th></tr></thead><tbody>${X.lines.map((l) => `<tr ${ficheAttr(l.article, i.orderId)}><td class="mono small">${esc(l.article || '')}</td><td>${esc(l.designation)}${l.staff ? ' <span class="mute small">· ' + esc(l.staff) + '</span>' : ''}</td><td class="n">${l.qty}</td><td class="n">${dt(l.puHT)}</td><td class="n">${l.remise ? l.remise + ' %' : ''}</td><td class="n b">${dt(l.totHT)}</td></tr>`).join('')}</tbody></table>
+    <div class="tot"><div><span>Total H.T.</span><b>${M(X.ht)}</b></div>${X.fodec ? `<div><span>FODEC ${+i.fodec} %</span><b>${M(X.fodec)}</b></div>` : ''}<div><span>TVA ${i.tva} %</span><b>${M(X.tva)}</b></div><div><span>Total TTC</span><b>${M(X.ttc)}</b></div>${X.timbre ? `<div><span>Timbre</span><b>${M(X.timbre)}</b></div>` : ''}<div class="big"><span>Net à payer</span><b>${M(X.net)}</b></div>
       ${+i.advance ? `<div><span>Avance déduite</span><b>- ${M(i.advance)}</b></div>` : ''}${(i.payments || []).map((p) => `<div><span>Règlement ${isoToFr(p.date)} · ${esc(p.mode)}${p.ref ? ' ' + esc(p.ref) : ''}</span><b>- ${M(p.amount)}</b></div>`).join('')}
       <div class="big ${rest > 0 ? 'due' : 'ok'}"><span>Reste à payer</span><b>${M(rest)}</b></div></div>
     <p class="mute small">${esc(amountWords(X.net, C))}.</p>
-    ${off ? '' : `<h3>Règlements</h3>${(i.payments || []).length ? `<table class="t"><tbody>${i.payments.map((p, k) => `<tr><td>${isoToFr(p.date)}</td><td class="n b">${M(p.amount)}</td><td>${esc(p.mode)}</td><td>${esc(p.ref || '')}</td><td class="r">${p.enc ? '<span class="mute small" title="Encaissement enregistré en comptabilité : à annuler depuis Comptabilité clients › Encaissements">compta</span>' : `<button class="ib" data-paydel="${k}" title="Supprimer">✕</button>`}</td></tr>`).join('')}</tbody></table>` : ''}
-      ${rest > 0 ? `<div class="advf"><input type="number" min="0" step="0.001" id="payamt" placeholder="Montant" value="${rest}"><select id="paymode">${G.paymentModes.map((m) => `<option>${esc(m)}</option>`).join('')}</select><input data-date id="paydate" value="${isoToday()}" required><input id="payref" placeholder="N° chèque / virement"><button class="btn sm" data-act="payadd">+ Enregistrer le règlement</button></div>` : '<p class="ok b">Facture soldée.</p>'}`}`;
+    ${off ? '' : `<h3>Règlements</h3>${(i.payments || []).length ? `<table class="t"><tbody>${i.payments.map((p, k) => `<tr><td>${isoToFr(p.date)}</td><td class="n b">${M(p.amount)}</td><td>${esc(p.mode)}</td><td>${esc(p.ref || '')}</td><td>${esc(bankName(p.bank))}</td><td>${p.due ? 'éch. ' + isoToFr(p.due) : ''}</td><td class="r">${scanCell(p)}${p.enc ? '<span class="mute small" title="Encaissement enregistré en comptabilité : à annuler depuis Comptabilité clients › Encaissements">compta</span>' : `<button class="ib" data-paydel="${k}" title="Supprimer">✕</button>`}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${rest > 0 ? `<div class="advf"><input type="number" min="0" step="0.001" id="payamt" placeholder="Montant" value="${rest}"><select id="paymode">${G.paymentModes.map((m) => `<option>${esc(m)}</option>`).join('')}</select><input data-date id="paydate" value="${isoToday()}" required><input id="payref" placeholder="N° chèque / effet / virement"><select id="paybank">${bankOpts()}</select><input data-date id="paydue" value="" placeholder="Échéance"><label class="btn sm ghost filep">Scan<input type="file" id="payscan" accept="image/*,application/pdf" capture="environment" hidden></label><button class="btn sm" data-act="payadd">+ Enregistrer le règlement</button></div>` : '<p class="ok b">Facture soldée.</p>'}`}`;
 }
 
 /* ---- clients */
@@ -196,9 +221,14 @@ document.addEventListener('click', async (ev) => {
     if (d.advdel !== undefined) { const o = curOrder(), a = o.advances[+d.advdel]; if (!confirm(`Supprimer l’avance de ${M(a.amount)} du ${isoToFr(a.date)} ?`)) return; o.advances.splice(+d.advdel, 1); await saveOrder(o); return; }
     if (d.advpdf !== undefined) { const o = curOrder(), a = o.advances[+d.advpdf]; if (!a.receipt) { a.receipt = await nextNumber(D, cat, 'receipt', a.date); await saveOrder(o, false); } busy('Préparation du reçu…'); const b = await buildReceipt(CO, o, a); busy(false); await D.docs.save('factures', `Recu ${a.receipt} - ${o.client.name}`, b); return; }
     if (d.bldel !== undefined) { const b = db.bls.find((x) => x.id === selId), l = b.lines[+d.bldel]; if ((b.lines || []).length <= 1) return toast('Un BL garde au moins une ligne : pour tout retirer, annulez le BL.', true); if (!confirm(`Supprimer la ligne « ${[l.designation, l.color, l.size].filter(Boolean).join(' · ')} » (${l.qty} pcs) du BL ${b.number} ? Ces pièces redeviennent « à livrer ».`)) return; await put('bls', { ...b, lines: b.lines.filter((_, k) => k !== +d.bldel) }); render(true); toast('Ligne supprimée du BL.'); return; }
+    if (d.scan) { if (D.fichiers) window.open(D.fichiers.url(d.scan), '_blank'); return; }
     if (d.paydel !== undefined) { const i = db.invoices.find((x) => x.id === selId); if (!confirm('Supprimer ce règlement ?')) return; i.payments.splice(+d.paydel, 1); await put('invoices', i); render(true); return; }
     if (d.act) await act(d.act, t);
   } catch (e) { busy(false); toast(e.message, true); }
+});
+document.addEventListener('dblclick', (ev) => {
+  const tr = ev.target.closest('#main tr[data-fiche]'); if (!tr || ev.target.matches('input,select,button')) return;
+  ouvrirFiche(tr.dataset.fiche, tr.dataset.fo);
 });
 document.addEventListener('input', (ev) => {
   const t = ev.target;
@@ -211,7 +241,7 @@ document.addEventListener('change', async (ev) => {
     if (d.ol !== undefined) {
       const o = curOrder(), l = o.lines[+d.ol], v = d.k === 'qty' ? Math.max(0, Math.floor(+t.value || 0)) : r3(Math.max(0, +t.value || 0));
       if (d.k === 'qty') { const done = Math.max(delivered(db, o)[l.id] || 0, invoicedLines(db, o)[l.id] || 0); if (v < done) { toast(`Déjà ${done} livré(s) ou facturé(s) : la quantité ne peut pas être inférieure.`, true); t.value = l.qty; return; } }
-      l[d.k] = v; await saveOrder(o); return;
+      l[d.k] = d.k === 'pu' ? r3(v * kTTC(l)) : v; await saveOrder(o); return;
     }
     if (d.of) {
       const o = curOrder();
@@ -246,28 +276,26 @@ async function act(k, btn) {
     tab = 'orders'; selId = rec.id; render(); toast(`Commande ${rec.number} créée. Ajoutez les lignes.`);
   }
   else if (k === 'addline' && o) {
-    await loadArticles();
-    if (ART.length) {
-      const r0 = await ask({ title: 'Ajouter une ligne', text: 'Choisissez un article ou une prestation du fichier articles (créé par le commercial ou le comptable), ou une ligne libre.', fields: [{ k: 'art', label: 'Article', type: 'select', value: '', options: [['', '— Ligne libre —'], ...ART.map((a) => [String(a.id), `${a.code} · ${a.designation}${a.prix_ht !== undefined ? ' · ' + M(artTTC(a)) + ' TTC' : ''}`])] }] });
-      if (!r0) return;
-      const a = ART.find((x) => String(x.id) === r0.art);
-      if (a) {
-        const r1 = await ask({ title: a.designation, fields: [{ k: 'staff', label: 'Staff', type: 'select', value: '', options: [['', '—'], ...staffList(cat).map((x) => [x, x])] }, { k: 'color', label: 'Couleur' }, { k: 'size', label: 'Taille' }, { k: 'qty', label: `Quantité (${a.unite || 'pièce'})`, type: 'number', value: '1' }, { k: 'pu', label: 'Prix unitaire TTC (DT)', type: 'number', value: String(artTTC(a)) }] });
-        if (!r1) return;
-        o.lines.push({ id: rid(), src: 'article', article: a.code, artType: a.type, designation: a.designation, staff: r1.staff, color: r1.color.trim(), size: r1.size.trim(), qty: Math.max(0, Math.floor(+r1.qty || 0)), pu: r3(+r1.pu || 0), service: a.type === 'prestation' });
-        await saveOrder(o); return;
-      }
-    }
-    const r = await ask({ title: 'Ajouter une ligne', fields: [{ k: 'designation', label: 'Désignation', placeholder: 'Ex. : Transport, Polo blanc sans marquage…' }, { k: 'staff', label: 'Staff', type: 'select', value: '', options: [['', '—'], ...staffList(cat).map((x) => [x, x])] }, { k: 'color', label: 'Couleur' }, { k: 'size', label: 'Taille' }, { k: 'qty', label: 'Quantité', type: 'number', value: '1' }, { k: 'pu', label: 'Prix unitaire TTC (DT)', type: 'number', value: '0' }, { k: 'service', label: 'Prestation (ne se livre pas : transport, programme…)', type: 'check' }] });
-    if (!r || !r.designation.trim()) return;
-    o.lines.push({ id: rid(), src: 'manual', designation: r.designation.trim(), staff: r.staff, color: r.color.trim(), size: r.size.trim(), qty: Math.max(0, Math.floor(+r.qty || 0)), pu: r3(+r.pu || 0), service: !!r.service });
-    await saveOrder(o);
+    await loadArticles(); await loadRefs().catch(() => {});
+    const r = await ask({ title: `Ajouter des lignes · commande ${o.number}`, wide: true, okLabel: 'Ajouter', fields: [{ k: 'lines', type: 'invlines', value: { lines: [blankLine(true)], cs: true, remise: false, noTotals: true, orderId: o.id, tva: G.tva, timbre: 0, fodec: G.fodec } }] });
+    if (!r) return;
+    const L = r.lines.lines.filter((l) => String(l.designation).trim() && +l.qty > 0); if (!L.length) return;
+    for (const l of L) { const y = { id: rid(), src: l.article ? 'article' : 'manual', article: l.article || '', artType: l.artType || '', designation: l.designation.trim(), staff: l.staff || '', color: (l.color || '').trim(), size: (l.size || '').trim(), qty: Math.max(0, Math.floor(+l.qty || 0)), service: !!l.service }; y.pu = r3((+l.pu || 0) * kTTC(y)); o.lines.push(y); }
+    await saveOrder(o); toast(`${L.length} ligne(s) ajoutée(s).`);
   }
+  else if (k === 'fichejoin' && o) {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/pdf,image/jpeg,image/png';
+    inp.onchange = async () => { const f = inp.files[0]; if (!f) return; try { busy('Envoi de la fiche technique…'); await D.fichiers.envoyer('fiche_technique', 'commande', o.id, f); busy(false); toast('Fiche technique jointe à la commande ' + o.number + '.'); } catch (e) { busy(false); toast(e.message, true); } };
+    inp.click();
+  }
+  else if (k === 'ficheopen' && o) await ouvrirFiche('', o.id);
+  else if (k === 'freebl') await newBLDirect();
   else if (k === 'advadd' && o) {
     const amt = r3(+$('#advamt').value || 0); if (!(amt > 0)) return toast('Indiquez le montant.', true);
     const t = orderTotal(o), a0 = advancesTotal(o);
     if (t && a0 + amt > t + 0.0005 && !confirm(`Le total des avances (${M(a0 + amt)}) dépasse la commande (${M(t)}). Continuer ?`)) return;
-    const a = { id: rid(), date: $('#advdate').dataset.iso || isoToday(), amount: amt, mode: $('#advmode').value, ref: $('#advref').value.trim() };
+    const a = { id: rid(), date: $('#advdate').dataset.iso || isoToday(), amount: amt, mode: $('#advmode').value, ref: $('#advref').value.trim(), bank: $('#advbank').value, due: $('#advdue').dataset.iso || '' };
+    const sc = await upScan(a.id, $('#advscan')); if (sc) a.scan = sc;
     a.receipt = await nextNumber(D, cat, 'receipt', a.date);
     (o.advances ||= []).push(a); await saveOrder(o); toast(`Avance enregistrée · reçu ${a.receipt}.`);
   }
@@ -287,7 +315,9 @@ async function act(k, btn) {
   else if (k === 'payadd') {
     const i = db.invoices.find((x) => x.id === selId), amt = r3(+$('#payamt').value || 0); if (!(amt > 0)) return toast('Indiquez le montant.', true);
     { const rest = r3(Math.max(0, invoiceTotals(i).net - paidOf(i))); if (amt > rest + 0.0005 && !confirm(`Le règlement (${M(amt)}) dépasse le reste à payer (${M(rest)}). L’enregistrer quand même ?`)) return; }
-    (i.payments ||= []).push({ id: rid(), date: $('#paydate').dataset.iso || isoToday(), amount: amt, mode: $('#paymode').value, ref: $('#payref').value.trim() });
+    const p = { id: rid(), date: $('#paydate').dataset.iso || isoToday(), amount: amt, mode: $('#paymode').value, ref: $('#payref').value.trim(), bank: $('#paybank').value, due: $('#paydue').dataset.iso || '' };
+    const sc = await upScan(p.id, $('#payscan')); if (sc) p.scan = sc;
+    (i.payments ||= []).push(p);
     await put('invoices', i); render(true); toast('Règlement enregistré.');
   }
   else if (k === 'freeinv') await newInvoice(null, null);
@@ -303,11 +333,33 @@ async function newBL(o) {
     { k: 'qty', type: 'table', rows: goods.map((l) => ({ id: l.id, label: [l.designation, l.staff, l.color, l.size].filter(Boolean).join(' · '), max: (+l.qty || 0) - (del[l.id] || 0) })) },
     { k: 'note', label: 'Observations (facultatif)' }], okLabel: 'Créer le BL' });
   if (!r) return;
-  const lines = goods.map((l) => ({ lineId: l.id, designation: l.designation, staff: l.staff, color: l.color, size: l.size, qty: Math.min(Math.max(0, Math.floor(+r.qty[l.id] || 0)), (+l.qty || 0) - (del[l.id] || 0)) })).filter((l) => l.qty > 0);
+  const lines = goods.map((l) => ({ lineId: l.id, article: l.article || '', designation: l.designation, staff: l.staff, color: l.color, size: l.size, qty: Math.min(Math.max(0, Math.floor(+r.qty[l.id] || 0)), (+l.qty || 0) - (del[l.id] || 0)) })).filter((l) => l.qty > 0);
   if (!lines.length) return toast('Aucune quantité à livrer.', true);
   const client = clientSnap(db.clients.find((c) => c.id === o.client.id) || o.client);
   const bl = await put('bls', { number: await nextNumber(D, cat, 'bl', r.date), date: r.date, orderId: o.id, orderNumber: o.number, clientPO: o.clientPO || '', client, lines, note: r.note.trim(), status: 'livre' });
   render(true); toast(`BL ${bl.number} créé.`);
+  await pdfBL(bl);
+}
+
+// 0.10.1 : BL direct (sans commande préalable) — la commande est créée automatiquement (origine « BL direct »), puis le BL.
+async function newBLDirect() {
+  await loadArticles(); await loadRefs().catch(() => {});
+  const today = isoToday();
+  const r = await ask({ title: 'Bon de livraison', wide: true, okLabel: 'Créer le BL', fields: [
+    { k: 'client', label: 'Client', list: db.clients.map((c) => c.name) }, { k: 'clientPO', label: 'N° bon de commande client (facultatif)' },
+    { k: 'date', label: 'Date de livraison', type: 'date', value: today },
+    { k: 'lines', type: 'invlines', value: { lines: [blankLine(true)], cs: true, remise: false, noTotals: true, tva: G.tva, timbre: 0, fodec: G.fodec } },
+    { k: 'note', label: 'Observations (facultatif)' }] });
+  if (!r) return;
+  if (!r.client.trim()) return toast('Indiquez le client.', true);
+  const L = r.lines.lines.filter((l) => String(l.designation).trim() && +l.qty > 0);
+  if (!L.some((l) => !l.service)) return toast('Le BL doit contenir au moins une ligne livrable (hors prestation).', true);
+  const c = await ensureClient(D, r.client), client = clientSnap(c), date = r.date || today;
+  const lines = L.map((l) => { const y = { id: rid(), src: l.article ? 'article' : 'manual', article: l.article || '', artType: l.artType || '', designation: l.designation.trim(), staff: l.staff || '', color: (l.color || '').trim(), size: (l.size || '').trim(), qty: Math.max(0, Math.floor(+l.qty || 0)), service: !!l.service }; y.pu = r3((+l.pu || 0) * kTTC(y)); return y; });
+  const ord = await put('orders', { number: await nextNumber(D, cat, 'order', date), clientPO: r.clientPO.trim(), client, date, delivery: date, lines, advances: [], products: [], status: 'en_cours', origine: 'bl_direct', total: 0 });
+  const bl = await put('bls', { number: await nextNumber(D, cat, 'bl', date), date, orderId: ord.id, orderNumber: ord.number, clientPO: ord.clientPO || '', client,
+    lines: lines.filter((l) => !l.service).map((l) => ({ lineId: l.id, article: l.article, designation: l.designation, staff: l.staff, color: l.color, size: l.size, qty: l.qty })), note: (r.note || '').trim(), status: 'livre' });
+  tab = 'bls'; selId = bl.id; render(); toast(`BL ${bl.number} créé (commande ${ord.number} créée automatiquement).`);
   await pdfBL(bl);
 }
 
@@ -324,19 +376,21 @@ async function newInvoice(o, bl) {
     let qty = {};
     if (src === 'rest') qty = restQ;
     else { const b = db.bls.find((x) => x.id === src.slice(3)); blIds = [b.id]; for (const l of b.lines) qty[l.lineId] = Math.min(restQ[l.lineId] || 0, +l.qty || 0); for (const l of o.lines) if (l.service) qty[l.id] = restQ[l.id]; }
-    lines = groupInvoiceLines(o.lines, qty);
+    const st = studioIds(o);
+    lines = groupInvoiceLines(o.lines, qty).map((g) => { const ol = o.lines.find((x) => x.id === g.lineIds[0]) || {};
+      return { ...g, pu: puHTo(ol), article: ol.article || '', staff: ol.staff || '', ...(ol.service ? { service: true } : {}), ...(ol.artType ? { artType: ol.artType } : {}), ...(g.lineIds.some((id) => st.has(id)) ? { studio: true } : {}) }; });
     if (!lines.length) return toast('Rien à facturer : tout est déjà facturé.', true);
   }
   const client0 = o ? clientSnap(db.clients.find((c) => c.id === o.client.id) || o.client) : null;
   const advLeft = o ? r3(Math.max(0, advancesTotal(o) - advanceUsed(db, o))) : 0;
-  await loadArticles();
-  const draft = { lines: lines.length ? lines : [{ designation: '', qty: 1, pu: 0, remise: 0 }], tva: G.tva, timbre: G.timbre, fodec: +G.fodec || 0, pricesTTC: G.pricesTTC };
+  await loadArticles(); await loadRefs().catch(() => {});
+  const draft = { lines: lines.length ? lines : [blankLine(false)], tva: G.tva, timbre: G.timbre, fodec: +G.fodec || 0, pricesTTC: false, orderId: o ? o.id : '', fixed: !!o };
   // ERP 0.7.0 : vente locale (DT, TVA 19 %, timbre) ou à l'exportation (EUR / USD, TVA 0 %, sans timbre — comptable 21/10/2026)
   const r00 = await ask({ title: 'Type de facture', fields: [{ k: 'kind', label: 'Vente', type: 'select', value: 'DT', options: [['DT', 'Locale — dinars (TVA ' + G.tva + ' %' + (+G.fodec ? ', FODEC ' + G.fodec + ' %' : '') + ', timbre ' + dt(G.timbre) + ' DT)'], ['EUR', 'Exportation — euros (TVA 0 %)'], ['USD', 'Exportation — dollars US (TVA 0 %)']] }] });
   if (!r00) return;
   const EXP = r00.kind !== 'DT';
-  if (EXP) { draft.tva = 0; draft.timbre = 0; draft.fodec = 0; draft.pricesTTC = false; if (lines.length) toast('Facture export : vérifiez les prix unitaires, ils doivent être saisis HT dans la devise choisie.'); }
-  const r = await ask({ title: o ? `Facture · commande ${o.number}${blIds.length ? ' · ' + db.bls.find((b) => b.id === blIds[0]).number : ''}` : 'Facture libre', wide: true, okLabel: 'Valider la facture', fields: [
+  if (EXP) { draft.tva = 0; draft.timbre = 0; draft.fodec = 0; if (lines.length) toast('Facture export : vérifiez les prix H.T., ils doivent être saisis dans la devise choisie.'); }
+  const r = await ask({ title: o ? `Facture · commande ${o.number}${blIds.length ? ' · ' + db.bls.find((b) => b.id === blIds[0]).number : ''}` : 'Facture', wide: true, okLabel: 'Valider la facture', fields: [
     ...(o ? [] : [{ k: 'client', label: 'Client', list: db.clients.map((c) => c.name) }, { k: 'clientPO', label: 'N° bon de commande client (facultatif)' }]),
     { k: 'date', label: 'Date de facture', type: 'date', value: today }, { k: 'due', label: 'Échéance', type: 'date', value: addDays(today, G.dueDays) },
     { k: 'lines', type: 'invlines', value: draft },
@@ -352,11 +406,13 @@ async function newInvoice(o, bl) {
   if (!o) { if (!r.client.trim()) return toast('Indiquez le client.', true); client = clientSnap(await ensureClient(D, r.client)); }
   if (!CO.mf && !confirm('Le matricule fiscal de votre société n’est pas renseigné (Paramètres › Société & factures). Créer la facture quand même ?')) return;
   const inv = { date: r.date, due: r.due, orderId: o ? o.id : '', orderNumber: o ? o.number : '', clientPO: o ? o.clientPO || '' : r.clientPO.trim(), blIds, blNumbers: blIds.map((id) => db.bls.find((b) => b.id === id).number), client,
-    lines: L.map((l) => ({ ...l, qty: +l.qty, pu: r3(+l.pu), remise: +l.remise || 0 })), tva: EXP ? 0 : +r.lines.tva, timbre: EXP ? 0 : +r.lines.timbre, fodec: EXP ? 0 : +G.fodec || 0, pricesTTC: EXP ? false : r.lines.pricesTTC, advance: 0, payments: [], paymentMode: r.paymentMode, note: r.note.trim(), status: 'validee',
+    lines: L.map(({ studio, ...l }) => ({ ...l, qty: +l.qty, pu: r3(+l.pu), remise: Math.min(100, Math.max(0, +l.remise || 0)) })), tva: EXP ? 0 : +r.lines.tva, timbre: EXP ? 0 : +r.lines.timbre, fodec: EXP ? 0 : +G.fodec || 0, pricesTTC: false, advance: 0, payments: [], paymentMode: r.paymentMode, note: r.note.trim(), status: 'validee',
     ...(EXP ? { currency: r00.kind, export: true, incoterm: r.incoterm || '' } : {}), ...(r.ttnRef.trim() ? { ttnRef: r.ttnRef.trim() } : {}) };
   inv.advance = EXP ? 0 : r3(Math.min(Math.max(0, +r.advance || 0), advLeft || (o ? 0 : 0), invoiceTotals(inv).net));
   inv.number = await nextNumber(D, cat, 'invoice', r.date);
-  const saved = await put('invoices', inv);
+  let saved;
+  try { saved = await put('invoices', inv); }
+  catch (e) { if (/vente à perte/i.test(e.message) && confirm(e.message + '\n\nConfirmer la vente à perte ?')) saved = await put('invoices', { ...inv, confirmer_perte: true }); else throw e; }
   tab = 'invoices'; selId = saved.id; render(); toast(`Facture ${saved.number} créée.`);
   await pdfFacture(saved);
 }
@@ -389,16 +445,18 @@ async function editInvoice(i0) {
   const i = db.invoices.find((x) => x.id === i0.id) || i0;
   if (!invEditable(i)) return toast('Cette facture est réglée (règlement ou avoir) : établissez un avoir.', true);
   const cap = capsFor(i) || {};
-  const x0 = { lines: JSON.parse(JSON.stringify(i.lines || [])), tva: +i.tva || 0, timbre: +i.timbre || 0, fodec: +i.fodec || 0, pricesTTC: i.pricesTTC !== false, locked: true, caps: cap };
+  const ttc = i.pricesTTC !== false, kI = (l) => (ttc ? (1 + (+i.tva || 0) / 100) * (l.service || l.artType === 'prestation' ? 1 : 1 + (+i.fodec || 0) / 100) : 1);
+  const o0 = i.orderId && db.orders.find((x) => x.id === i.orderId), st = studioIds(o0);
+  const x0 = { lines: JSON.parse(JSON.stringify(i.lines || [])).map((l) => ({ ...l, _pu0: l.pu, _ht0: r3((+l.pu || 0) / kI(l)), pu: r3((+l.pu || 0) / kI(l)), ...((l.lineIds || []).some((id) => st.has(id)) ? { studio: true } : {}) })), tva: +i.tva || 0, timbre: +i.timbre || 0, fodec: +i.fodec || 0, pricesTTC: false, locked: true, caps: cap, orderId: i.orderId || '' };
   const r = await ask({ title: `Modifier la facture ${i.number}`, wide: true, okLabel: 'Enregistrer les modifications',
-    text: 'Vous pouvez corriger la désignation, la quantité, le prix et la remise, ou supprimer une ligne. Le numéro, la date, le client et les taux ne changent pas. Chaque modification est tracée (journal d’audit). Une facture réglée se corrige par un avoir.',
+    text: 'Vous pouvez corriger la désignation, la quantité, le PRIX H.T. et la remise, ou supprimer une ligne (lignes « infographie » : prix et remise seulement). Le numéro, la date, le client et les taux ne changent pas. Chaque modification est tracée (journal d’audit). Une facture réglée se corrige par un avoir.',
     fields: [{ k: 'lines', type: 'invlines', value: x0 }] });
   if (!r) return;
   const L = r.lines.lines.filter((l) => +l.qty > 0);
   if (!L.length) return toast('Une facture garde au moins une ligne : pour tout retirer, annulez la facture.', true);
   if (L.some((l) => !String(l.designation).trim())) return toast('Chaque ligne doit avoir une désignation.', true);
-  const rec = { ...i, lines: L.map((l) => {
-    const y = { ...l, qty: +l.qty, pu: r3(+l.pu), remise: Math.min(100, Math.max(0, +l.remise || 0)) };
+  const rec = { ...i, lines: L.map(({ studio, _pu0, _ht0, ...l }) => {
+    const y = { ...l, qty: +l.qty, pu: _pu0 !== undefined && r3(+l.pu) === _ht0 ? _pu0 : r3(+l.pu * kI(l)), remise: Math.min(100, Math.max(0, +l.remise || 0)) };
     if ((l.lineIds || []).length === 1) y.qtyBy = { [l.lineIds[0]]: y.qty }; // une seule taille : la quantité saisie est celle de la taille
     if ((l.lineIds || []).length > 1) { // libellé « (M×6, L×4) » remis à jour
       const o = db.orders.find((z) => z.id === i.orderId), sz = (l.lineIds || []).map((id) => [o && (o.lines.find((z) => z.id === id) || {}).size, +y.qtyBy[id] || 0]).filter(([a, q]) => a && q > 0);
@@ -417,61 +475,104 @@ async function editInvoice(i0) {
 }
 
 /* ------------------------------------------------------------------ fenêtre de saisie */
+// 0.10.1 : fenêtres de saisie avec barre ─ (réduire) ☐ (plein écran / fenêtre) ✕ (fermer) ; les grandes s'ouvrent en plein écran.
+// Éditeur de lignes : Réf (suggestions produits finis + articles) | Désignation | Service | [Couleur | Taille] | Qté | PRIX H.T. | Remise % | Total H.T.
+let ASK_OPEN = false;
+const blankLine = (cs) => ({ article: '', designation: '', staff: '', qty: 1, pu: 0, remise: 0, ...(cs ? { color: '', size: '' } : {}) });
 function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false }) {
+  if (ASK_OPEN) { toast('Une fenêtre de saisie est déjà ouverte (ou réduite en bas de l’écran) : terminez-la d’abord.', true); const m = $('#dlgmin'); if (m) m.classList.add('flash'); return Promise.resolve(null); }
+  ASK_OPEN = true;
   return new Promise((resolve) => {
-    const dlg = $('#dlg'), v = {};
+    const dlg = $('#dlg'), v = {}; let full = wide, mini = false;
     for (const f of fields) v[f.k] = f.type === 'table' ? Object.fromEntries(f.rows.map((r) => [r.id, r.max])) : f.type === 'invlines' ? JSON.parse(JSON.stringify(f.value)) : f.type === 'check' ? false : (f.value ?? '');
-    const invT = (x) => { const X = invoiceTotals(x); return `<div class="tot sm"><div><span>Total HT</span><b>${M(X.ht)}</b></div>${X.fodec ? `<div><span>FODEC ${+x.fodec} %</span><b>${M(X.fodec)}</b></div>` : ''}<div><span>TVA</span><b>${M(X.tva)}</b></div><div><span>Total TTC</span><b>${M(X.ttc)}</b></div><div><span>Timbre</span><b>${M(X.timbre)}</b></div><div class="big"><span>Net à payer</span><b>${M(X.net)}</b></div></div>`; };
+    const staffs = staffList(cat);
+    const invT = (x) => { const X = invoiceTotals({ ...x, pricesTTC: false }); return x.noTotals ? `<div class="tot sm"><div class="big"><span>Total H.T.</span><b>${M(X.ht)}</b></div></div>` : `<div class="tot sm"><div><span>Total H.T.</span><b>${M(X.ht)}</b></div>${X.remise ? `<div><span>dont remises</span><b>${M(X.remise)}</b></div>` : ''}${X.fodec ? `<div><span>FODEC ${+x.fodec} %</span><b>${M(X.fodec)}</b></div>` : ''}<div><span>TVA ${+x.tva} %</span><b>${M(X.tva)}</b></div><div><span>Total TTC</span><b>${M(X.ttc)}</b></div><div><span>Timbre</span><b>${M(X.timbre)}</b></div><div class="big"><span>Net à payer</span><b>${M(X.net)}</b></div></div>`; };
+    const lineHT = (l) => r3((+l.qty || 0) * (+l.pu || 0) * (1 - Math.min(100, Math.max(0, +l.remise || 0)) / 100));
     const field = (f) => {
       if (f.type === 'select') return `<label>${esc(f.label)}<select data-k="${f.k}">${f.options.map(([k, l]) => `<option value="${esc(k)}" ${k === v[f.k] ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
       if (f.type === 'date') return `<label>${esc(f.label)}<input data-date data-k="${f.k}" value="${esc(v[f.k])}" ${f.k === 'date' ? 'required' : ''}></label>`;
       if (f.type === 'check') return `<label class="chk"><input type="checkbox" data-k="${f.k}"> ${esc(f.label)}</label>`;
       if (f.type === 'table') return `<div class="w2"><table class="t ed"><thead><tr><th>Ligne</th><th class="n">Reste</th><th class="n">À livrer</th></tr></thead><tbody>${f.rows.map((r) => `<tr><td>${esc(r.label)}</td><td class="n mute">${r.max}</td><td class="n"><input type="number" min="0" max="${r.max}" step="1" data-tk="${f.k}" data-id="${esc(r.id)}" value="${v[f.k][r.id]}"></td></tr>`).join('')}</tbody></table>
         <div class="row"><button type="button" class="btn sm ghost" data-all="${f.k}">Tout livrer</button><button type="button" class="btn sm ghost" data-none="${f.k}">Tout à zéro</button></div></div>`;
-      if (f.type === 'invlines') { const x = v[f.k];
-        return `<div class="w2"><table class="t ed"><thead><tr><th>Désignation</th><th class="n">Qté</th><th class="n">P.U. ${x.pricesTTC ? 'TTC' : 'HT'}</th><th class="n">Remise %</th><th></th></tr></thead><tbody>${x.lines.map((l, i) => `<tr><td><input data-il="${i}" data-c="designation" value="${esc(l.designation)}"></td><td class="n">${l.qtyBy && Object.keys(l.qtyBy).length > 1 ? `<button type="button" class="btn sm ghost" data-ilsz="${i}" title="Quantités par taille">${l.qty} ✎</button>` : `<input type="number" min="0" step="1" data-il="${i}" data-c="qty" value="${l.qty}">`}</td><td class="n"><input type="number" min="0" step="0.001" data-il="${i}" data-c="pu" value="${l.pu}"></td><td class="n"><input type="number" min="0" max="100" step="1" data-il="${i}" data-c="remise" value="${l.remise || 0}"></td><td><button type="button" class="ib" data-ildel="${i}">✕</button></td></tr>`).join('')}</tbody></table>
-          <div class="row">${x.locked ? '<span class="hint">Taux, timbre et mode de prix de la facture émise : inchangés.</span>' : `<button type="button" class="btn sm ghost" data-iladd>+ Ligne</button>${ART.length ? `<select data-ilart class="inl"><option value="">+ Article…</option>${ART.map((a) => `<option value="${a.id}">${esc(a.code + ' · ' + a.designation)}</option>`).join('')}</select>` : ''}<label class="inl">Prix saisis<select data-ix="pricesTTC"><option value="1" ${x.pricesTTC ? 'selected' : ''}>TTC</option><option value="0" ${x.pricesTTC ? '' : 'selected'}>HT</option></select></label><label class="inl">TVA %<input type="number" step="0.5" min="0" data-ix="tva" value="${x.tva}"></label><label class="inl">Timbre DT<input type="number" step="0.1" min="0" data-ix="timbre" value="${x.timbre}"></label>`}</div>
+      if (f.type === 'invlines') { const x = v[f.k], cs = !!x.cs, rem = x.remise !== false;
+        const row = (l, i) => { const lk = !!l.studio;
+          return `<tr ${ficheAttr(l.article, x.orderId)}><td class="refc"><input data-il="${i}" data-c="article" value="${esc(l.article || '')}" placeholder="Réf." autocomplete="off" ${lk ? 'readonly' : ''}></td>
+            <td><input data-il="${i}" data-c="designation" value="${esc(l.designation)}" ${lk ? 'readonly' : ''}>${lk ? '<span class="tag" title="Commande saisie en Infographie : seuls le prix et la remise se modifient">infographie</span>' : ''}</td>
+            <td><select data-il="${i}" data-c="staff" ${lk ? 'disabled' : ''}><option value="">—</option>${[...new Set([...staffs, l.staff].filter(Boolean))].map((s2) => `<option ${s2 === l.staff ? 'selected' : ''}>${esc(s2)}</option>`).join('')}</select></td>
+            ${cs ? `<td><input data-il="${i}" data-c="color" value="${esc(l.color || '')}" class="w-s"></td><td><input data-il="${i}" data-c="size" value="${esc(l.size || '')}" class="w-xs"></td>` : ''}
+            <td class="n">${l.qtyBy && Object.keys(l.qtyBy).length > 1 ? `<button type="button" class="btn sm ghost" data-ilsz="${i}" title="Quantités par taille" ${lk ? 'disabled' : ''}>${l.qty}${lk ? '' : ' ✎'}</button>` : `<input type="number" min="0" step="1" data-il="${i}" data-c="qty" value="${l.qty}" ${lk ? 'readonly' : ''}>`}</td>
+            <td class="n"><input type="number" min="0" step="0.001" data-il="${i}" data-c="pu" value="${l.pu}"></td>
+            ${rem ? `<td class="n"><input type="number" min="0" max="100" step="1" data-il="${i}" data-c="remise" value="${l.remise || 0}"></td>` : ''}
+            <td class="n b" data-lt="${i}">${dt(lineHT(l))}</td><td>${lk ? '' : `<button type="button" class="ib" data-ildel="${i}" title="Supprimer la ligne">✕</button>`}</td></tr>`; };
+        return `<div class="w2 lines-ed"><table class="t ed"><thead><tr><th>Réf.</th><th>Désignation</th><th>Service</th>${cs ? '<th>Couleur</th><th>Taille</th>' : ''}<th class="n">Qté</th><th class="n">PRIX H.T.</th>${rem ? '<th class="n">Remise %</th>' : ''}<th class="n">Total H.T.</th><th></th></tr></thead><tbody>${x.lines.map(row).join('')}</tbody></table>
+          <div class="row">${x.fixed ? '' : '<button type="button" class="btn sm ghost" data-iladd>+ Ligne</button>'}${x.locked || x.noTotals ? (x.locked ? '<span class="hint">Taux et timbre de la facture émise : inchangés.</span>' : '') : `<label class="inl">TVA %<input type="number" step="0.5" min="0" data-ix="tva" value="${x.tva}"></label><label class="inl">Timbre DT<input type="number" step="0.1" min="0" data-ix="timbre" value="${x.timbre}"></label>`}<span class="hint">Tapez une référence ou une partie de la désignation : les produits finis et articles s’affichent.</span></div>
           <div data-invtot>${invT(x)}</div></div>`; }
       return `<label class="${f.list ? 'w2' : ''}">${esc(f.label)}<input data-k="${f.k}" type="${f.type === 'number' ? 'number' : 'text'}" ${f.type === 'number' ? 'step="0.001" min="0"' : ''} value="${esc(v[f.k])}" placeholder="${esc(f.placeholder || '')}" ${f.list ? `list="dl-${f.k}"` : ''} autocomplete="off">${f.list ? `<datalist id="dl-${f.k}">${f.list.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>` : ''}</label>`;
     };
     const draw = () => {
-      dlg.innerHTML = `<form class="dlg-b ${wide ? 'wide' : ''}" novalidate><h3>${esc(title)}</h3>${text ? `<p class="hint">${esc(text)}</p>` : ''}<div class="g2">${fields.map(field).join('')}</div>
+      dlg.innerHTML = `<form class="dlg-b ${full ? 'full' : wide ? 'wide' : ''}" novalidate><div class="dlg-h"><h3>${esc(title)}</h3><div class="wbtn"><button type="button" data-wmin title="Réduire">─</button><button type="button" data-wmax title="${full ? 'Fenêtre' : 'Plein écran'}">${full ? '❐' : '☐'}</button><button type="button" data-x title="Fermer" class="wx">✕</button></div></div>
+        <div class="dlg-c">${text ? `<p class="hint">${esc(text)}</p>` : ''}<div class="g2">${fields.map(field).join('')}</div></div>
         <div class="row dlg-f"><button type="button" class="btn ghost" data-x>Annuler</button><button type="submit" class="btn">${esc(okLabel)}</button></div></form>`;
       attachDatePickers(dlg); const f0 = dlg.querySelector('input[data-k]:not([data-date]),select[data-k]'); if (f0) setTimeout(() => f0.focus(), 30);
     };
     const inv = () => fields.find((f) => f.type === 'invlines');
-    const done = (r) => { dlg.hidden = true; dlg.innerHTML = ''; dlg.oninput = dlg.onchange = dlg.onclick = dlg.onsubmit = null; window.removeEventListener('keydown', ek); resolve(r); };
-    const ek = (e) => { if (e.key === 'Escape' && !document.querySelector('.dp-pop')) done(null); };
+    const pop = () => document.getElementById('refpop');
+    const closePop = () => { const p0 = pop(); if (p0) p0.remove(); };
+    const showPop = (inp) => {
+      closePop(); const qq = norm(inp.value); if (!REFS.length) return;
+      const L = REFS.filter((r) => !qq || norm(r.ref + ' ' + r.designation).includes(qq)).slice(0, 14); if (!L.length) return;
+      const rc = inp.getBoundingClientRect(), p0 = document.createElement('div'); p0.id = 'refpop';
+      p0.style.left = Math.max(4, Math.min(rc.left, innerWidth - 620)) + 'px'; p0.style.top = (rc.bottom + 2) + 'px';
+      p0.innerHTML = `<table class="t"><thead><tr><th>Réf.</th><th>Désignation</th><th>Type</th><th class="n">PRIX H.T.</th></tr></thead><tbody>${L.map((r, k) => `<tr data-pk="${k}"><td class="mono b">${esc(r.ref)}</td><td>${esc(r.designation)}</td><td class="mute small">${esc(r.type)}</td><td class="n">${r.ht === null || r.ht === undefined ? '—' : dt(r.ht)}</td></tr>`).join('')}</tbody></table>`;
+      p0.onmousedown = (e) => { e.preventDefault(); const tr = e.target.closest('tr[data-pk]'); if (!tr) return; const r = L[+tr.dataset.pk], x = v[inv().k], l = x.lines[+inp.dataset.il];
+        Object.assign(l, { article: r.ref, designation: r.designation, ...(r.ht !== null && r.ht !== undefined ? { pu: r3(+r.ht) } : {}), ...(r.service ? { service: true, artType: 'prestation' } : { service: false, artType: r.artType || (r.type === 'Produit fini' ? 'produit_fini' : '') }) });
+        closePop(); draw(); const nx = dlg.querySelector(`[data-il="${inp.dataset.il}"][data-c="qty"]`); if (nx) nx.focus(); };
+      document.body.appendChild(p0);
+    };
+    const done = (r) => { closePop(); ASK_OPEN = false; const m = $('#dlgmin'); if (m) m.remove(); dlg.hidden = true; dlg.classList.remove('mini'); dlg.innerHTML = ''; dlg.oninput = dlg.onchange = dlg.onclick = dlg.onsubmit = null; dlg.removeEventListener('focusout', fo); window.removeEventListener('keydown', ek); resolve(r); };
+    const ek = (e) => { if (mini) return; if (e.key === 'Escape') { if (pop()) { closePop(); return; } if (!document.querySelector('.dp-pop') && confirm('Fermer sans enregistrer ?')) done(null); } };
+    const fo = (e) => { if (e.target.dataset && e.target.dataset.c === 'article') setTimeout(closePop, 150); };
+    const minimize = () => { mini = true; closePop(); dlg.classList.add('mini'); const bar = document.createElement('button'); bar.id = 'dlgmin'; bar.type = 'button'; bar.innerHTML = `<span>▲</span> ${esc(title)} <small>(réduite — cliquez pour reprendre)</small>`; bar.onclick = () => { mini = false; dlg.classList.remove('mini'); bar.remove(); }; document.body.appendChild(bar); };
     const upd = (e) => {
       const t = e.target, ds = t.dataset;
       if (ds.k) v[ds.k] = t.type === 'checkbox' ? t.checked : t.matches('[data-date]') ? t.dataset.iso : t.value;
       else if (ds.tk) v[ds.tk][ds.id] = Math.min(+t.max, Math.max(0, Math.floor(+t.value || 0)));
-      else if (ds.il !== undefined) { const x = v[inv().k]; x.lines[+ds.il][ds.c] = ds.c === 'designation' ? t.value : +t.value || 0; dlg.querySelector('[data-invtot]').innerHTML = invT(x); }
-      else if (t.hasAttribute && t.hasAttribute('data-ilart') && e.type === 'change' && t.value) { const a = ART.find((y) => String(y.id) === t.value), x = v[inv().k]; if (a) x.lines.push({ designation: a.designation, qty: 1, pu: x.pricesTTC ? artTTC(a) : r3(+a.prix_ht || 0), remise: 0, article: a.code, artType: a.type, ...(a.type === 'prestation' ? { service: true } : {}) }); draw(); }
-      else if (ds.ix) { const x = v[inv().k]; x[ds.ix] = ds.ix === 'pricesTTC' ? t.value === '1' : +t.value || 0; if (ds.ix === 'pricesTTC') draw(); else dlg.querySelector('[data-invtot]').innerHTML = invT(x); }
+      else if (ds.il !== undefined) { const x = v[inv().k], l = x.lines[+ds.il]; l[ds.c] = ['designation', 'article', 'staff', 'color', 'size'].includes(ds.c) ? t.value : +t.value || 0;
+        if (ds.c === 'article' && e.type === 'input') { l.article = t.value.trim().toUpperCase(); showPop(t); }
+        if (ds.c === 'article' && e.type === 'change') { const r = REFS.find((y) => y.ref === t.value.trim().toUpperCase()); if (r && !l.designation) { setTimeout(() => { const tr = pop(); if (!tr) { Object.assign(l, { article: r.ref, designation: r.designation, ...(r.ht != null ? { pu: r3(+r.ht) } : {}), service: !!r.service }); draw(); } }, 160); } }
+        const c = dlg.querySelector(`[data-lt="${ds.il}"]`); if (c) c.textContent = dt(lineHT(l)); dlg.querySelector('[data-invtot]').innerHTML = invT(x); }
+      else if (ds.ix) { const x = v[inv().k]; x[ds.ix] = +t.value || 0; dlg.querySelector('[data-invtot]').innerHTML = invT(x); }
     };
-    dlg.oninput = upd; dlg.onchange = upd;
-    dlg.onclick = (e) => { const b = e.target.closest('button'); if (!b) { if (e.target === dlg) done(null); return; }
-      if (b.hasAttribute('data-x')) done(null);
+    dlg.oninput = upd; dlg.onchange = upd; dlg.addEventListener('focusout', fo);
+    dlg.onclick = (e) => { const b = e.target.closest('button'); if (!b) return;
+      if (b.hasAttribute('data-x')) { if (!e.isTrusted || b.classList.contains('wx') ? confirm('Fermer sans enregistrer ?') : true) done(null); }
+      else if (b.hasAttribute('data-wmin')) minimize();
+      else if (b.hasAttribute('data-wmax')) { const fm = dlg.querySelector('form'); full = !full; fm.classList.toggle('full', full); b.textContent = full ? '❐' : '☐'; b.title = full ? 'Fenêtre' : 'Plein écran'; }
       else if (b.dataset.all) { const f = fields.find((x) => x.k === b.dataset.all); for (const r of f.rows) v[f.k][r.id] = r.max; draw(); }
       else if (b.dataset.none) { const f = fields.find((x) => x.k === b.dataset.none); for (const r of f.rows) v[f.k][r.id] = 0; draw(); }
-      else if (b.hasAttribute('data-iladd')) { v[inv().k].lines.push({ designation: '', qty: 1, pu: 0, remise: 0 }); draw(); }
+      else if (b.hasAttribute('data-iladd')) { const x = v[inv().k]; x.lines.push(blankLine(x.cs)); draw(); const l = dlg.querySelectorAll('[data-c="article"]'); if (l.length) l[l.length - 1].focus(); }
       else if (b.dataset.ildel !== undefined) { v[inv().k].lines.splice(+b.dataset.ildel, 1); draw(); }
-      else if (b.dataset.ilsz !== undefined) { // 0.9.1 : quantités par taille d'une ligne regroupée (plafond : reste à facturer de la commande)
+      else if (b.dataset.ilsz !== undefined) { // quantités par taille d'une ligne regroupée (plafond : reste à facturer de la commande)
         const x = v[inv().k], l = x.lines[+b.dataset.ilsz], caps = x.caps || {};
         for (const id of l.lineIds || []) {
-          const c = caps[id] || { max: Infinity, label: id }, cur = +(l.qtyBy || {})[id] || 0;
-          const a = prompt(`${l.designation}\nQuantité pour « ${c.label} »${Number.isFinite(c.max) ? ` (au plus ${c.max})` : ''} :`, String(cur));
+          const c = caps[id] || { max: Infinity, label: id }, cur0 = +(l.qtyBy || {})[id] || 0;
+          const a = prompt(`${l.designation}\nQuantité pour « ${c.label} »${Number.isFinite(c.max) ? ` (au plus ${c.max})` : ''} :`, String(cur0));
           if (a === null) break;
-          const q = Math.max(0, Math.floor(+a || 0)); if (q > c.max) { alert(`${c.max} au plus pour « ${c.label} ».`); continue; }
-          l.qtyBy[id] = q;
+          const q2 = Math.max(0, Math.floor(+a || 0)); if (q2 > c.max) { alert(`${c.max} au plus pour « ${c.label} ».`); continue; }
+          l.qtyBy[id] = q2;
         }
-        l.qty = Object.values(l.qtyBy || {}).reduce((s2, q) => s2 + (+q || 0), 0); draw();
+        l.qty = Object.values(l.qtyBy || {}).reduce((s2, q2) => s2 + (+q2 || 0), 0); draw();
       } };
+    dlg.ondblclick = (e) => { const tr = e.target.closest('tr[data-fiche]'); if (tr && !e.target.matches('input,select') && tr.dataset.fiche) ouvrirFiche(tr.dataset.fiche, tr.dataset.fo); };
     dlg.onsubmit = (e) => { e.preventDefault(); done(JSON.parse(JSON.stringify(v))); };
     window.addEventListener('keydown', ek);
     dlg.hidden = false; draw();
   });
+}
+async function ouvrirFiche(ref, oid) {
+  if (!D.fichiers) return toast('Fiches techniques disponibles dans l’ERP web.', true);
+  try { await D.fichiers.fiche(ref || '', oid || ''); }
+  catch (e) { toast(/fiche_absente|aucune fiche/i.test(e.message) ? `Aucune fiche technique enregistrée pour ${ref || 'cette commande'}.` : e.message, true); }
 }
 
 /* ------------------------------------------------------------------ utilitaires */
