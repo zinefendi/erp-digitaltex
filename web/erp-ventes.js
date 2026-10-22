@@ -293,7 +293,7 @@ async function modifierAvoir(a) {
   fen.addEventListener('close', () => api('DELETE', `/api/verrous/avoir/${a.id}`).catch(() => {}), { once: true });
   const calc = () => {
     let s = 0; z.querySelectorAll('[data-q]').forEach((i) => { const l = C.lignes.find((x) => x.index === +i.dataset.q); s += (+i.value || 0) * (+z.querySelector(`[data-pu="${i.dataset.q}"]`).value || 0) * (1 - (l.remise || 0) / 100); });
-    $('#am-tot').innerHTML = `Montant ${C.prix_ttc ? 'TTC' : 'HT'} des lignes : <b>${md(s, C.devise)}</b> (montant exact, FODEC et TVA calculés par le serveur)`;
+    $('#am-tot').innerHTML = `Montant ${C.prix_ttc ? 'TTC' : 'HT'} des lignes : <b>${md(s, C.devise)}</b> ${C.timbre ? ` + timbre ${md(C.timbre, C.devise)}` : ''} (montant exact, FODEC, TVA et timbre calculés par le serveur)`;
   };
   z.addEventListener('input', calc);
   z.addEventListener('click', (e) => { const b = e.target.closest('[data-raz]'); if (b) { z.querySelector(`[data-q="${b.dataset.raz}"]`).value = 0; calc(); } });
@@ -324,8 +324,9 @@ function nouvelAvoir(G) {
   const calc = () => {
     if (!C) return;
     let s = 0; z.querySelectorAll('[data-q]').forEach((i) => { const l = C.lignes[+i.dataset.q]; s += (+i.value || 0) * l.pu * (1 - (l.remise || 0) / 100); });
-    const ht = C.prix_ttc ? s / (1 + C.tva / 100) : s, net = C.prix_ttc ? s : s * (1 + C.tva / 100);
-    $('#av-tot').innerHTML = `Avoir : HT <b>${md(ht, C.devise)}</b> · <b>Net ${md(net, C.devise)}</b> · reste dû sur la facture ${md(C.reste, C.devise)}${net > C.reste + 0.0005 ? ` → <b class="rouge">${md(net - C.reste, C.devise)} à rembourser</b>` : ''}`;
+    // estimation à l'écran (le serveur fait le calcul exact) : FODEC sur les produits, TVA, + timbre de la facture
+    const kf = 1 + (C.fodec || 0) / 100, ht = C.prix_ttc ? s / (1 + C.tva / 100) / kf : s, net = (C.prix_ttc ? s : s * kf * (1 + C.tva / 100)) + (s > 0 ? (C.timbre || 0) : 0);
+    $('#av-tot').innerHTML = `Avoir : HT <b>${md(ht, C.devise)}</b>${C.fodec ? ` · FODEC ${C.fodec} %` : ''}${C.timbre ? ` · timbre ${md(C.timbre, C.devise)}` : ''} · <b>Net ≈ ${md(net, C.devise)}</b> · reste dû sur la facture ${md(C.reste, C.devise)}${net > C.reste + 0.0005 ? ` → <b class="rouge">${md(net - C.reste, C.devise)} à rembourser</b>` : ''}`;
   };
   z.addEventListener('change', async (e) => {
     if (e.target.id !== 'av-f') return;

@@ -200,12 +200,13 @@ async function lignesAvoir(f, autres, sel) {
   if (!lignes.length) throw leve('rien_a_crediter', sel === null ? 'Aucune quantité à créditer : la facture est déjà entièrement couverte par des avoirs.' : 'Indiquez au moins une quantité à créditer.');
   return lignes;
 }
-/** Document avoir au format ventes.documents : mêmes taux que la facture (TVA, FODEC, mode TTC), montants recalculés. */
+/** Document avoir au format ventes.documents : mêmes taux que la facture (TVA, FODEC, mode TTC), montants recalculés.
+ *  0.9.2 : l'avoir comporte aussi le timbre de la facture (décision de l'utilisateur du 22/10/2026) — 0 pour une facture export. */
 function docAvoir(f, lignes, date, note) {
   const dev = devFacture(f);
   const doc = { client_id: String(f.client?.id || ''), client: f.client || {}, ref_client: f.clientPO || '', type_client: dev === 'DT' ? 'local' : 'export', devise: dev,
     date, validite: null, langue: f.langue === 'en' ? 'en' : 'fr', incoterm: f.incoterm || '', lieu_incoterm: '', taux_change: null,
-    prix_ttc: f.pricesTTC !== false, tva: +f.tva || 0, fodec: +f.fodec || 0, timbre: 0, lignes, conditions: '', note: String(note || '').trim(), colisage: [] };
+    prix_ttc: f.pricesTTC !== false, tva: +f.tva || 0, fodec: +f.fodec || 0, timbre: r3(+f.timbre || 0), lignes, conditions: '', note: String(note || '').trim(), colisage: [] };
   const t = V.totaux(doc);
   doc.lignes = t.lignes; doc.ht = t.ht; doc.montant_fodec = t.fodec; doc.montant_tva = t.tva; doc.ttc = t.ttc; doc.net = t.net;
   return doc;
@@ -450,8 +451,8 @@ module.exports = async function routesVentes(app) {
       f.updatedAt = new Date().toISOString();
       await c.query(`update commercial.documents set donnees = $1, maj_le = now(), maj_par = $2 where collection = 'invoices' and id = $3`, [f, req.utilisateur.id, f.id]);
       await c.query(`update ventes.documents set lignes = $1, ht = $2, montant_fodec = $3, montant_tva = $4, ttc = $5, net = $6, note = $7, motif = $8, a_rembourser = $9,
-          version = version + 1, maj_le = now(), maj_par = $10 where id = $11`,
-        [JSON.stringify(doc.lignes), doc.ht, doc.montant_fodec, doc.montant_tva, doc.ttc, doc.net, doc.note, motif, r3(doc.net - impute), req.utilisateur.id, av.id]);
+          timbre = $12, version = version + 1, maj_le = now(), maj_par = $10 where id = $11`,
+        [JSON.stringify(doc.lignes), doc.ht, doc.montant_fodec, doc.montant_tva, doc.ttc, doc.net, doc.note, motif, r3(doc.net - impute), req.utilisateur.id, av.id, doc.timbre]);
       const res = (d) => ({ net: d.net, lignes: (d.lignes || []).map((l) => ({ designation: l.designation, qte: l.qte, pu: l.pu })) });
       await S.auditer(c, req, 'avoir_modifie', { entite: 'avoir', entiteId: av.numero, avant: res(av), apres: { ...res(doc), impute, a_rembourser: r3(doc.net - impute) } });
       return masquer(req.droits, await lireUn(c, av.id, 'avoir'));
@@ -467,7 +468,7 @@ module.exports = async function routesVentes(app) {
     const sauf = req.query.sauf ? Number(req.query.sauf) : null; // 0.9.1 : modification d'un avoir → ses propres quantités restent créditables
     const credite = creditees(await avoirsDe(pool, f.id, sauf));
     const t = C.totauxFacture(f);
-    return { id: f.id, numero: f.number, date: f.date, client: f.client, devise: devFacture(f), statut: f.status, net: t.net, reste: r3(C.resteFacture(f) + (sauf ? (f.payments || []).filter((p) => p.avoir === sauf).reduce((x, p) => x + (+p.amount || 0), 0) : 0)), prix_ttc: f.pricesTTC !== false, tva: +f.tva || 0, fodec: +f.fodec || 0,
+    return { id: f.id, numero: f.number, date: f.date, client: f.client, devise: devFacture(f), statut: f.status, net: t.net, reste: r3(C.resteFacture(f) + (sauf ? (f.payments || []).filter((p) => p.avoir === sauf).reduce((x, p) => x + (+p.amount || 0), 0) : 0)), prix_ttc: f.pricesTTC !== false, tva: +f.tva || 0, fodec: +f.fodec || 0, timbre: r3(+f.timbre || 0),
       lignes: (f.lines || []).map((l, i) => ({ index: i, designation: l.designation, qte: +l.qty || 0, pu: +l.pu || 0, remise: +l.remise || 0, credite: credite[i] || 0, creditable: r3((+l.qty || 0) - (credite[i] || 0)) })) };
   });
 

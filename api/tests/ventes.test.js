@@ -162,14 +162,15 @@ test('avoirs : partiel puis total, plafond par ligne, imputation sur la facture,
   let r = await appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: f.id, motif: 'Retour 2 polos', lignes: [{ index: 0, qte: 2 }] } });
   assert.equal(r.statusCode, 201, r.body);
   const a1 = r.json();
-  assert.equal(a1.numero, `AV-${AN}-0001`); assert.equal(a1.net, 47.6); assert.equal(a1.ht, 40); assert.equal(a1.a_rembourser, 0);
+  // 0.9.2 : l'avoir comporte le timbre de la facture (1 DT)
+  assert.equal(a1.numero, `AV-${AN}-0001`); assert.equal(a1.net, 48.6); assert.equal(a1.timbre, 1); assert.equal(a1.ht, 40); assert.equal(a1.a_rembourser, 0);
   let fac = (await appel('GET', '/api/commercial/gestion', { jeton: J.compta })).json().invoices.find((x) => x.id === f.id);
-  assert.equal(fac.payments[0].mode, 'Avoir'); assert.equal(fac.payments[0].amount, 47.6);
+  assert.equal(fac.payments[0].mode, 'Avoir'); assert.equal(fac.payments[0].amount, 48.6);
   // plafond : il reste 8 polos créditables
   r = await appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: f.id, motif: 'trop', lignes: [{ index: 0, qte: 9 }] } });
   assert.equal(r.json().erreur, 'trop_credite');
   const cr = (await appel('GET', `/api/ventes/factures/${f.id}/creditable`, { jeton: J.compta })).json();
-  assert.equal(cr.lignes[0].creditable, 8); assert.equal(cr.reste, r3(298.5 - 47.6));
+  assert.equal(cr.lignes[0].creditable, 8); assert.equal(cr.reste, r3(298.5 - 48.6));
   // la Gestion ne peut ni retirer l'imputation de l'avoir ni annuler la facture
   r = await appel('PUT', '/api/commercial/invoices', { jeton: J.compta, body: { ...fac, payments: [] } });
   assert.equal(r.statusCode, 200); assert.equal(r.json().payments.length, 1, 'imputation d’avoir conservée');
@@ -181,7 +182,7 @@ test('avoirs : partiel puis total, plafond par ligne, imputation sur la facture,
   r = await appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: f.id, motif: 'Annulation de la vente', total: true } });
   assert.equal(r.statusCode, 201, r.body);
   const a2 = r.json();
-  assert.equal(a2.net, r3(8 * 23.8 + 59.5)); assert.equal(a2.a_rembourser, r3(a2.net - (298.5 - 47.6 - 200)));
+  assert.equal(a2.net, r3(8 * 23.8 + 59.5 + 1)); assert.equal(a2.a_rembourser, r3(a2.net - (298.5 - 48.6 - 200)));
   r = await appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: f.id, motif: 'encore', total: true } });
   assert.equal(r.json().erreur, 'rien_a_crediter');
   // annulation d'un avoir : motif obligatoire, imputation retirée de la facture
@@ -197,6 +198,7 @@ test('avoirs : partiel puis total, plafond par ligne, imputation sur la facture,
   assert.ok(ecr, 'avoir au journal'); assert.equal(ecr.journal, 'VE');
   assert.ok(!e.ecritures.some((x) => x.piece === a1.numero), 'avoir annulé non comptabilisé');
   assert.ok(!e.desequilibres.includes(a2.numero));
+  assert.ok(ecr.lignes.some((l) => l.compte === '4472' && l.debit === 1), 'timbre de l’avoir au débit du compte timbre');
   const tb = (await appel('GET', `/api/compta/tableau-de-bord?du=${AN}-01-01&au=${AN}-12-31`, { jeton: J.compta })).json();
   assert.equal(tb.ventes.find((v) => v.devise === 'DT').avoirs, 1);
 });
@@ -316,20 +318,20 @@ test('0.9.1 avoir : modification des quantités et du prix, suppression de ligne
     lines: [{ designation: 'Polo homme', qty: 10, pu: 23.8 }, { designation: 'Casquette', qty: 5, pu: 11.9 }], payments: [], status: 'validee' };
   await pool.query(`insert into commercial.documents (collection, id, donnees) values ('invoices', $1, $2)`, [f.id, f]);
   let a = (await appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: f.id, motif: 'Retour', lignes: [{ index: 0, qte: 2 }, { index: 1, qte: 1 }] } })).json();
-  assert.equal(a.net, r3(2 * 23.8 + 11.9));
+  assert.equal(a.net, r3(2 * 23.8 + 11.9 + 1));
   // 3 polos, casquette supprimée
   let r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, lignes: [{ index: 0, qte: 3 }] } });
   assert.equal(r.statusCode, 200, r.body); a = r.json();
-  assert.equal(a.lignes.length, 1); assert.equal(a.net, 71.4);
+  assert.equal(a.lignes.length, 1); assert.equal(a.net, 72.4);
   let fac = (await gestionDe(J.compta)).invoices.find((x) => x.id === f.id);
-  assert.equal(fac.payments.length, 1); assert.equal(fac.payments[0].amount, 71.4, 'imputation refaite');
+  assert.equal(fac.payments.length, 1); assert.equal(fac.payments[0].amount, 72.4, 'imputation refaite');
   // erreur de prix : avoir de 2 DT par polo sur 10 polos ; prix > facturé refusé ; quantité > facturée refusée
   r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, lignes: [{ index: 0, qte: 10, pu: 30 }] } });
   assert.equal(r.json().erreur, 'prix_trop_eleve');
   r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, lignes: [{ index: 0, qte: 11 }] } });
   assert.equal(r.json().erreur, 'trop_credite');
   r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, motif: 'Erreur de prix', lignes: [{ index: 0, qte: 10, pu: 2 }] } });
-  assert.equal(r.statusCode, 200, r.body); a = r.json(); assert.equal(a.net, 20); assert.equal(a.motif, 'Erreur de prix');
+  assert.equal(r.statusCode, 200, r.body); a = r.json(); assert.equal(a.net, 21); assert.equal(a.motif, 'Erreur de prix');
   r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version - 1, lignes: [{ index: 0, qte: 1 }] } });
   assert.equal(r.json().erreur, 'conflit_version');
   r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, lignes: [{ index: 0, qte: 0 }] } });
@@ -349,4 +351,24 @@ test('0.9.1 avoir : modification des quantités et du prix, suppression de ligne
   assert.equal(r.json().erreur, 'non_modifiable');
   const au = (await pool.query(`select 1 from noyau.audit where action = 'avoir_modifie' and entite_id = $1`, [a.numero])).rowCount;
   assert.ok(au >= 2);
+});
+
+test('0.9.2 avoir : timbre et FODEC de la facture repris ; facture export sans timbre ni FODEC', async () => {
+  const f = { id: 'fac-av3', number: `FAC-${AN}-0960`, date: `${AN}-07-01`, client: { id: 'cl-local', name: 'Hôtel Sousse' }, tva: 19, fodec: 1, timbre: 1, pricesTTC: false,
+    lines: [{ designation: 'T-shirt', qty: 5, pu: 28 }, { designation: 'T-shirt Pantone', qty: 7, pu: 26 }], payments: [], status: 'validee' };
+  await pool.query(`insert into commercial.documents (collection, id, donnees) values ('invoices', $1, $2)`, [f.id, f]);
+  const a = (await appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: f.id, date: `${AN}-07-05`, motif: 'Annulation', total: true } })).json();
+  // avoir total = facture du modèle DIGITAL-TEX : 322 HT + FODEC 3,220 + TVA 61,792 + timbre 1 = 388,012
+  assert.deepEqual([a.ht, a.montant_fodec, a.montant_tva, a.timbre, a.net], [322, 3.22, 61.792, 1, 388.012]);
+  const fac = (await appel('GET', '/api/commercial/gestion', { jeton: J.compta })).json().invoices.find((x) => x.id === f.id);
+  assert.equal(fac.payments[0].amount, 388.012, 'facture entièrement soldée par l’avoir total');
+  const e = (await appel('GET', `/api/compta/ecritures?du=${AN}-07-01&au=${AN}-07-31`, { jeton: J.compta })).json();
+  const ecr = e.ecritures.find((x) => x.piece === a.numero);
+  assert.ok(ecr.lignes.some((l) => l.compte === '4471' && l.debit === 3.22)); assert.ok(ecr.lignes.some((l) => l.compte === '4472' && l.debit === 1));
+  assert.ok(!e.desequilibres.includes(a.numero));
+  const fx = { id: 'fac-av4', number: `FAC-${AN}-0961`, date: `${AN}-07-02`, client: { id: 'cl-export', name: 'Hotel Lyon SARL' }, currency: 'EUR', export: true, tva: 0, fodec: 0, timbre: 0, pricesTTC: false,
+    lines: [{ designation: 'Polo', qty: 10, pu: 6 }], payments: [], status: 'validee' };
+  await pool.query(`insert into commercial.documents (collection, id, donnees) values ('invoices', $1, $2)`, [fx.id, fx]);
+  const ax = (await appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: fx.id, motif: 'Retour', lignes: [{ index: 0, qte: 2 }] } })).json();
+  assert.deepEqual([ax.timbre, ax.montant_fodec, ax.net], [0, 0, 12]);
 });

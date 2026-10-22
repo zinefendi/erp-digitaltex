@@ -78,7 +78,7 @@ async function ecritures(db, du, au) {
     ]);
   }
   // 0.9.0 : avoirs émis — écriture inverse de la vente (client au crédit, ventes / TVA au débit)
-  const av = (await db.query(`select numero, to_char(date, 'YYYY-MM-DD') d, client, devise, type_client, lignes, ht::float8 ht, montant_tva::float8 tva, montant_fodec::float8 fodec, net::float8 net, facture_num
+  const av = (await db.query(`select numero, to_char(date, 'YYYY-MM-DD') d, client, devise, type_client, lignes, ht::float8 ht, montant_tva::float8 tva, montant_fodec::float8 fodec, timbre::float8 timbre, net::float8 net, facture_num
     from ventes.documents where type = 'avoir' and statut = 'emis' and date between $1 and $2 order by date, id`, [du, au])).rows;
   for (const a of av) {
     const presta = r3((a.lignes || []).filter((l) => l.service).reduce((s, l) => s + (+l.total_ht || 0), 0));
@@ -88,6 +88,7 @@ async function ecritures(db, du, au) {
       { compte: P.ventes_prestations, debit: presta, credit: 0, devise: a.devise },
       { compte: P.fodec || P.tva_collectee, debit: a.fodec, credit: 0, devise: a.devise },
       { compte: P.tva_collectee, debit: a.tva, credit: 0, devise: a.devise },
+      { compte: P.timbre, debit: a.timbre, credit: 0, devise: a.devise }, // 0.9.2 : l'avoir comporte le timbre
       { compte: P.clients, tiers: a.client?.name || '', debit: 0, credit: a.net, devise: a.devise },
     ]);
   }
@@ -615,10 +616,10 @@ module.exports = async function routesCompta(app) {
       L.push([f.date, f.number, f.client?.name || '', f.client?.mf || '', devise(f), e.t.ht, e.t.fodec, +f.tva || 0, e.t.tva, e.t.timbre, e.t.net, f.status === 'annulee' ? 0 : e.regle, f.status === 'annulee' ? 0 : e.reste, f.due || '', f.export ? 'oui' : 'non', f.status === 'annulee' ? 'annulée' : 'émise']);
     }
     // 0.9.0 : avoirs (montants négatifs), pour un journal des ventes complet
-    for (const a of (await pool.query(`select numero, to_char(date, 'YYYY-MM-DD') d, client, devise, tva::float8 taux, ht::float8 ht, montant_fodec::float8 fodec, montant_tva::float8 tva, net::float8 net, facture_num, statut, type_client
+    for (const a of (await pool.query(`select numero, to_char(date, 'YYYY-MM-DD') d, client, devise, tva::float8 taux, ht::float8 ht, montant_fodec::float8 fodec, montant_tva::float8 tva, timbre::float8 timbre, net::float8 net, facture_num, statut, type_client
         from ventes.documents where type = 'avoir' and date between $1 and $2 order by numero`, [du, au])).rows) {
       const z = a.statut === 'annule';
-      L.push([a.d, a.numero + ' (avoir sur ' + a.facture_num + ')', a.client?.name || '', a.client?.mf || '', a.devise, z ? 0 : -a.ht, z ? 0 : -a.fodec, a.taux, z ? 0 : -a.tva, 0, z ? 0 : -a.net, 0, 0, '', a.type_client === 'export' ? 'oui' : 'non', z ? 'avoir annulé' : 'avoir']);
+      L.push([a.d, a.numero + ' (avoir sur ' + a.facture_num + ')', a.client?.name || '', a.client?.mf || '', a.devise, z ? 0 : -a.ht, z ? 0 : -a.fodec, a.taux, z ? 0 : -a.tva, z ? 0 : -a.timbre, z ? 0 : -a.net, 0, 0, '', a.type_client === 'export' ? 'oui' : 'non', z ? 'avoir annulé' : 'avoir']);
     }
     await S.auditer(pool, req, 'export_comptable', { entite: 'export', entiteId: 'ventes', details: { du, au, format: req.query.format || 'xlsx', lignes: L.length - 1 } });
     return envoyerTableau(reply, `journal-ventes-${du}-${au}`, req.query.format, [{ nom: 'Journal des ventes', lignes: L }]);

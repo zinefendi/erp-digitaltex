@@ -55,3 +55,11 @@ conversion des articles 0.7.0 ; clients Local / Export avec devise ; journaux et
 - **FODEC 1 %** sur les ventes locales en dinars (produits, hors prestations), ajouté avant la TVA (TVA sur HT + FODEC), jamais à l'export.
   Taux daté dans Paramètres › Fiscalité (1 % au 01/01/2026), figé sur chaque facture à sa création ; les factures déjà émises ne changent pas.
   Compte proposé 4471 (Comptabilité générale › Plan). Colonne FODEC dans le journal des ventes. **À confirmer par le comptable** (taux, assiette, compte).
+
+## 0.9.2 (22/10/2026) — timbre sur les avoirs, sans migration
+- **L'avoir comporte le timbre et le FODEC de sa facture** (décision de l'utilisateur du 22/10/2026) : net de l'avoir = HT + FODEC + TVA + timbre.
+  Facture export : ni timbre ni FODEC. Un avoir total solde donc exactement la facture.
+- Écriture de l'avoir : timbre au débit du compte timbre (4472), à côté du FODEC (4471) et de la TVA ; colonne Timbre négative dans le journal des ventes.
+- Écrans « Nouvel avoir » et « Modifier l'avoir » : FODEC et timbre indiqués dans l'estimation (montant exact calculé par le serveur).
+- Les avoirs déjà émis ne sont pas recalculés (ils gardent leur montant d'origine).
+- Confirmé par l'utilisateur : la modification d'une facture émise non réglée reste autorisée telle quelle.
