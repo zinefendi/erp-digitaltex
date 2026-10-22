@@ -120,6 +120,17 @@ async function controlerLignesFacture(c, rec, avant) {
   // une ligne issue de la commande ne dépasse jamais ce qui reste à facturer sur la commande
   if (avant.orderId) {
     const o = (await c.query(`select donnees from commercial.documents where collection = 'orders' and id = $1`, [avant.orderId])).rows[0]?.donnees;
+    // 0.10.1 : ligne issue d'une commande saisie en Infographie (Studio 3D) → seuls le prix et la remise se modifient
+    if (o) {
+      const studio = new Set((o.lines || []).filter((x) => x.src === 'studio').map((x) => x.id));
+      const sig = (l) => JSON.stringify([String(l.designation || '').trim(), Object.entries(l.qtyBy || {}).sort()]);
+      const avantSig = new Map((avant.lines || []).filter((l) => (l.lineIds || []).some((id) => studio.has(id))).map((l) => [(l.lineIds || []).slice().sort().join(','), sig(l)]));
+      for (const l of L) {
+        if (!(l.lineIds || []).some((id) => studio.has(id))) continue;
+        const k = (l.lineIds || []).slice().sort().join(',');
+        if (!avantSig.has(k) || avantSig.get(k) !== sig(l)) throw leveM('ligne_infographie', `« ${l.designation} » vient d’une commande saisie en Infographie : seuls le prix et la remise se modifient (pour retirer des pièces, établissez un avoir).`);
+      }
+    }
     if (o) {
       const deja = {};
       for (const f of await autresDocs(c, 'invoices', o.id, avant.id)) if (f.status !== 'annulee') for (const l of f.lines || []) for (const id of l.lineIds || []) deja[id] = (deja[id] || 0) + (+(l.qtyBy || {})[id] || 0);

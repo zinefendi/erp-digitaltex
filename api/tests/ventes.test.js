@@ -10,6 +10,7 @@ process.env.ERP_GLB_DIR = path.join(TMP, 'glb');
 process.env.ERP_CATALOGUE_REPRISE = path.join(TMP, 'reprise.json');
 process.env.ERP_CATALOGUE_USINE = path.join(TMP, 'usine.json');
 process.env.ERP_SAUVEGARDES = path.join(TMP, 'sauv');
+process.env.ERP_FICHIERS_DIR = path.join(TMP, 'fichiers');
 fs.writeFileSync(process.env.ERP_CATALOGUE_USINE, JSON.stringify({ catalog: [], shop: { articles: {} }, models: {} }));
 
 const { pool } = require('../lib/db');
@@ -371,4 +372,103 @@ test('0.9.2 avoir : timbre et FODEC de la facture repris ; facture export sans t
   await pool.query(`insert into commercial.documents (collection, id, donnees) values ('invoices', $1, $2)`, [fx.id, fx]);
   const ax = (await appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: fx.id, motif: 'Retour', lignes: [{ index: 0, qte: 2 }] } })).json();
   assert.deepEqual([ax.timbre, ax.montant_fodec, ax.net], [0, 0, 12]);
+});
+
+test('0.10.1 conversion en facture : devis local (TTC) et proforma saisie en PRIX H.T., commande + facture tracées', async () => {
+  let d = (await appel('POST', '/api/ventes/devis', { jeton: J.commercial, body: { client_id: 'cl-local', lignes: [ligne(20, { remise: 10, staff: 'RECEPTION' }), { designation: 'Transport', qte: 1, pu: 11.9, service: true }] } })).json();
+  assert.equal(d.lignes[0].staff, 'RECEPTION', 'le service (staff) de la ligne est conservé');
+  let r = await appel('POST', `/api/ventes/devis/${d.id}/facture`, { jeton: J.atelier, body: { version: d.version } });
+  assert.equal(r.statusCode, 403, 'l’atelier ne convertit pas en facture');
+  r = await appel('POST', `/api/ventes/devis/${d.id}/facture`, { jeton: J.commercial, body: { version: d.version, echeance: `${AN}-12-31` } });
+  assert.equal(r.statusCode, 201, r.body);
+  const { commande, facture } = r.json();
+  assert.match(facture.numero, /^FAC-/);
+  const G = await gestionDe(J.admin);
+  const f = G.invoices.find((x) => x.id === facture.id), o = G.orders.find((x) => x.id === commande.id);
+  assert.equal(f.orderId, o.id); assert.equal(f.origine.numero, d.numero); assert.equal(f.due, `${AN}-12-31`);
+  assert.equal(f.lines[0].remise, 10, 'la remise reste sur la ligne'); assert.equal(f.lines[0].pu, 20);
+  assert.equal(f.lines[0].qtyBy[o.lines[0].id], 10, 'la facture couvre toute la commande');
+  assert.equal(r3(f.lines.reduce((s, l) => s + l.qty * l.pu * (1 - l.remise / 100), 0)), r3(10 * 18 + 11.9));
+  d = (await appel('GET', `/api/ventes/devis/${d.id}`, { jeton: J.admin })).json();
+  assert.equal(d.statut, 'transforme');
+  assert.equal((await appel('POST', `/api/ventes/devis/${d.id}/facture`, { jeton: J.admin, body: { version: d.version } })).json().erreur, 'transition_interdite');
+  // proforma en PRIX H.T. → la commande reçoit des prix TTC (TVA + FODEC sur les produits), la facture garde le H.T.
+  const p = (await appel('POST', '/api/ventes/proformas', { jeton: J.admin, body: { client_id: 'cl-local', prix_ttc: false, lignes: [ligne(15)] } })).json();
+  assert.equal(p.prix_ttc, false);
+  r = await appel('POST', `/api/ventes/proformas/${p.id}/facture`, { jeton: J.admin, body: { version: p.version } });
+  assert.equal(r.statusCode, 201, r.body);
+  const G2 = await gestionDe(J.admin), f2 = G2.invoices.find((x) => x.id === r.json().facture.id), o2 = G2.orders.find((x) => x.id === r.json().commande.id);
+  assert.equal(f2.pricesTTC, false); assert.equal(f2.lines[0].pu, 15);
+  assert.ok(Math.abs(o2.lines[0].pu - 15 * (1 + p.tva / 100) * (1 + (p.fodec || 0) / 100)) < 0.0011, 'commande en TTC (format Gestion)');
+});
+
+test('0.10.1 facture issue d’une commande Infographie : seuls le prix et la remise se modifient', async () => {
+  const no = (await appel('POST', '/api/commercial/numero', { jeton: J.commercial, body: { kind: 'order' } })).json().numero;
+  const o = (await putG('orders', { number: no, status: 'en_cours', client: { id: 'cl-local', name: 'Hôtel Sousse' }, lines: [
+    { id: 's1', src: 'studio', designation: 'Polo « Accueil »', size: 'M', qty: 5, pu: 30 }, { id: 'm1', designation: 'Transport', qty: 1, pu: 10, service: true }] }, J.commercial)).json();
+  const nf = (await appel('POST', '/api/commercial/numero', { jeton: J.compta, body: { kind: 'invoice' } })).json().numero;
+  let f = (await putG('invoices', { number: nf, date: `${AN}-05-01`, orderId: o.id, orderNumber: o.number, client: { id: 'cl-local', name: 'Hôtel Sousse' }, tva: 19, timbre: 1, pricesTTC: true, advance: 0, payments: [], status: 'validee', blIds: [],
+    lines: [{ designation: 'Polo « Accueil » (M×5)', qty: 5, pu: 30, remise: 0, lineIds: ['s1'], qtyBy: { s1: 5 } }, { designation: 'Transport', qty: 1, pu: 10, lineIds: ['m1'], qtyBy: { m1: 1 }, service: true }] })).json();
+  let r = await putG('invoices', { ...f, lines: [{ ...f.lines[0], pu: 28, remise: 5 }, f.lines[1]] });
+  assert.equal(r.statusCode, 200, r.body); f = r.json();
+  r = await putG('invoices', { ...f, lines: [{ ...f.lines[0], qty: 4, qtyBy: { s1: 4 } }, f.lines[1]] });
+  assert.equal(r.json().erreur, 'ligne_infographie');
+  r = await putG('invoices', { ...f, lines: [{ ...f.lines[0], designation: 'Autre' }, f.lines[1]] });
+  assert.equal(r.json().erreur, 'ligne_infographie');
+  r = await putG('invoices', { ...f, lines: [f.lines[0], { ...f.lines[1], qty: 2, qtyBy: undefined, lineIds: undefined }] });
+  assert.equal(r.statusCode, 200, 'une ligne ajoutée à la main reste libre : ' + r.body);
+});
+
+test('0.10.1 banques, scans des moyens de paiement, fiches techniques, recherche des règlements', async () => {
+  const B = (await appel('GET', '/api/parametres/banques', { jeton: J.commercial })).json();
+  assert.ok(B.length >= 25 && B.some((b) => b.code === 'BIAT') && B.some((b) => b.code === 'ONP'));
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40, 1)]);
+  const PDF = Buffer.from('%PDF-1.4\n%fiche technique de test\n%%EOF\n');
+  const env = (q, body, jeton, type = 'application/octet-stream') => app.inject({ method: 'POST', url: '/api/fichiers?' + new URLSearchParams(q), payload: body, headers: { authorization: 'Bearer ' + jeton, 'content-type': type } });
+  // contenu contrôlé
+  let r = await env({ nature: 'scan_paiement', cible_type: 'reglement', nom: 'cheque.exe' }, Buffer.from('MZ\x90\x00 pas une image du tout'), J.commercial);
+  assert.equal(r.json().erreur, 'fichier_invalide');
+  r = await env({ nature: 'scan_paiement', cible_type: 'reglement', nom: 'cheque.png' }, PNG, J.infographie);
+  assert.equal(r.statusCode, 403, 'sans le droit prix : pas de scan');
+  r = await env({ nature: 'scan_paiement', cible_type: 'reglement', nom: 'cheque 1234567.png' }, PNG, J.commercial, 'image/png');
+  assert.equal(r.statusCode, 201, r.body);
+  const scan = r.json(); assert.equal(scan.mime, 'image/png');
+  // règlement de facture avec banque, n° du document et scan
+  const no = (await appel('POST', '/api/commercial/numero', { jeton: J.commercial, body: { kind: 'order' } })).json().numero;
+  const o = (await putG('orders', { number: no, status: 'en_cours', client: { id: 'cl-local', name: 'Hôtel Sousse' }, lines: [{ id: 'x1', src: 'studio', designation: 'Polo', size: 'L', qty: 2, pu: 50 }],
+    advances: [{ id: 'av1', date: `${AN}-06-01`, amount: 20, mode: 'Chèque', ref: '7654321', bank: 'STB', due: `${AN}-06-30`, scan: scan.id }] }, J.commercial)).json();
+  const nf = (await appel('POST', '/api/commercial/numero', { jeton: J.compta, body: { kind: 'invoice' } })).json().numero;
+  await putG('invoices', { number: nf, date: `${AN}-06-02`, orderId: o.id, orderNumber: o.number, client: { id: 'cl-local', name: 'Hôtel Sousse' }, tva: 19, timbre: 1, pricesTTC: true, advance: 0, status: 'validee', blIds: [],
+    lines: [{ designation: 'Polo', qty: 2, pu: 50, remise: 0, lineIds: ['x1'], qtyBy: { x1: 2 } }], payments: [{ id: 'p1', date: `${AN}-06-03`, amount: 30, mode: 'Chèque', ref: '1234567', bank: 'BIAT', scan: scan.id }] });
+  r = await appel('GET', '/api/reglements/recherche', { jeton: J.commercial });
+  assert.equal(r.statusCode, 200, r.body);
+  const L = r.json().filter((x) => x.doc_numero === nf || x.doc_numero === no);
+  const reg = L.find((x) => x.type === 'reglement'), avc = L.find((x) => x.type === 'avance');
+  assert.equal(reg.banque_nom, 'Banque Internationale Arabe de Tunisie (BIAT)'); assert.equal(reg.numero_doc, '1234567'); assert.equal(reg.scan.id, scan.id);
+  assert.equal(avc.banque, 'STB'); assert.equal(avc.echeance, `${AN}-06-30`);
+  assert.equal((await appel('GET', '/api/reglements/recherche', { jeton: J.infographie })).statusCode, 403, 'aucun montant sans le droit prix');
+  // le scan s'ouvre (droit prix) ; pas pour l'infographiste
+  r = await appel('GET', `/api/fichiers/${scan.id}`, { jeton: J.commercial });
+  assert.equal(r.statusCode, 200); assert.equal(r.headers['content-type'], 'image/png'); assert.equal(r.headers['x-content-type-options'], 'nosniff');
+  assert.equal((await appel('GET', `/api/fichiers/${scan.id}`, { jeton: J.infographie })).statusCode, 403);
+  // fiche technique : PDF du Studio rattaché par le n° de commande (nom « fiches-techniques-<n°>-<client> »), ouverte par double-clic
+  r = await env({ nature: 'fiche_technique', cible_type: 'commande', commande_slug: `fiches-techniques-${no}-hotel-sousse`, nom: 'fiches.pdf' }, PDF, J.infographie, 'application/pdf');
+  assert.equal(r.statusCode, 201, 'l’infographiste joint les fiches de ses commandes : ' + r.body);
+  assert.equal(r.json().cible_id, o.id);
+  r = await appel('GET', `/api/fichiers/fiche?commande=${encodeURIComponent(o.id)}&reference=XXX`, { jeton: J.commercial });
+  assert.equal(r.statusCode, 200, r.body); assert.equal(r.json().fichier.mime, 'application/pdf');
+  // fiche d'un produit fini (JPEG) prioritaire sur celle de la commande
+  const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(40, 2)]);
+  r = await env({ nature: 'fiche_technique', cible_type: 'produit', cible_id: PF.reference, nom: 'fiche.jpg' }, JPG, J.admin, 'image/jpeg');
+  assert.equal(r.statusCode, 201, r.body);
+  const fj = r.json();
+  r = await appel('GET', `/api/fichiers/fiche?commande=${encodeURIComponent(o.id)}&reference=${PF.reference}`, { jeton: J.commercial });
+  assert.equal(r.json().fichier.id, fj.id);
+  assert.equal((await appel('GET', '/api/fichiers/fiche?reference=P99926H', { jeton: J.commercial })).json().erreur, 'fiche_absente');
+  // retrait = masqué, jamais effacé, tracé
+  r = await appel('POST', `/api/fichiers/${fj.id}/annuler`, { jeton: J.admin, body: { motif: 'mauvaise version' } });
+  assert.equal(r.statusCode, 200);
+  assert.equal((await appel('GET', `/api/fichiers/${fj.id}`, { jeton: J.admin })).statusCode, 404);
+  assert.ok((await pool.query(`select 1 from commercial.fichiers where id = $1 and annule`, [fj.id])).rowCount);
+  assert.ok((await pool.query(`select 1 from noyau.audit where action = 'fichier_retire' and entite_id = $1`, [String(fj.id)])).rowCount);
 });

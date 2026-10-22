@@ -53,6 +53,7 @@ function construire(opts = {}) {
   app.register(require('./lib/routes-produits-finis'));
   app.register(require('./lib/routes-ventes'));
   app.register(require('./lib/routes-stocks'));
+  app.register(require('./lib/routes-fichiers'));
   return app;
 }
 

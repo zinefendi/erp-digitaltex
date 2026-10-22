@@ -91,7 +91,7 @@ async function nettoyerLignes(db, lignes, devise) {
     const remise = Math.min(100, Math.max(0, +l.remise || 0));
     if (produit && !V.REF_PF.test(produit)) throw leve('ligne_invalide', `Ligne ${i + 1} : référence produit fini invalide (${produit}).`);
     return { produit, designation, couleur: String(l.couleur || '').trim().slice(0, 60), taille: String(l.taille || '').trim().slice(0, 30),
-      qte: r3(qte), pu: arr(+l.pu), remise, service: !!l.service };
+      qte: r3(qte), pu: arr(+l.pu), remise, service: !!l.service, ...(String(l.staff || '').trim() ? { staff: String(l.staff).trim().slice(0, 60) } : {}) };
   });
   const refs = [...new Set(L.map((l) => l.produit).filter(Boolean))];
   if (refs.length) {
@@ -344,40 +344,79 @@ module.exports = async function routesVentes(app) {
     });
   }));
 
-  app.post('/api/ventes/:type/:id/commande', { preHandler: S.exigerConnexion(),
-    schema: { params: { type: 'object', properties: { type: { type: 'string', enum: ['devis', 'proformas'] }, id: { type: 'integer' } } },
-      body: { type: 'object', additionalProperties: false, required: ['version'], properties: { version: { type: 'integer' }, date: { type: 'string', format: 'date' }, livraison: { type: 'string', format: 'date' }, bc_client: { type: 'string', maxLength: 80 } } } },
-  }, avecErreurs(async (req, reply) => {
+  // Devis / proforma → commande (lignes au format de la Gestion 3.3.0 : prix TTC en local, HT dans la devise à l'export).
+  // 0.10.1 : un document saisi en PRIX H.T. (local) est converti en TTC pour la commande (TVA + FODEC des produits).
+  async function creerCommande(c, req, T, d, b) {
+    const date = b.date || jour();
+    const numero = (await c.query("select parametres.attribuer_numero('commande', $1::date) n", [date])).rows[0].n;
+    const cl = await client(c, d.client_id);
+    const kTTC = (l) => (d.devise === 'DT' && d.prix_ttc === false ? (1 + (+d.tva || 0) / 100) * (l.service ? 1 : 1 + (+d.fodec || 0) / 100) : 1);
+    const lines = d.lignes.map((l) => {
+      const net = (+l.pu || 0) * (1 - (+l.remise || 0) / 100) * kTTC(l);
+      return { id: rid(), src: l.produit ? 'produit_fini' : 'article', article: l.produit || '', designation: l.designation,
+        staff: l.staff || '', color: l.couleur || '', size: l.taille || '', qty: l.qte,
+        pu: l.remise || kTTC(l) !== 1 ? (d.devise === 'DT' ? r3 : r2)(net) : l.pu, service: !!l.service };
+    });
+    const total = r3(lines.reduce((s, l) => s + l.qty * l.pu, 0));
+    const now = new Date().toISOString();
+    const order = { id: rid(), number: numero, clientPO: b.bc_client || d.ref_client || '', client: cl.snap, date, delivery: b.livraison || '',
+      lines, advances: [], products: [], status: 'en_cours', total, createdAt: now, updatedAt: now,
+      origine: { type: T.type, id: Number(d.id), numero: d.numero },
+      ...(d.devise !== 'DT' ? { currency: d.devise, export: true, pricesTTC: false, incoterm: d.incoterm, langue: d.langue, taux_change: d.taux_change } : {}) };
+    await c.query(`insert into commercial.documents (collection, id, donnees, maj_par) values ('orders', $1, $2, $3)`, [order.id, order, req.utilisateur.id]);
+    await c.query(`update ventes.documents set statut = $2, commande_id = $3, commande_num = $4, version = version + 1, maj_le = now(), maj_par = $5 where id = $1`,
+      [d.id, T.type === 'devis' ? 'transforme' : 'transformee', order.id, numero, req.utilisateur.id]);
+    // la proforma issue d'un devis : le devis d'origine pointe aussi vers la commande (traçabilité amont ↔ aval)
+    if (d.origine_id) await c.query('update ventes.documents set commande_id = $2, commande_num = $3 where id = $1', [d.origine_id, order.id, numero]);
+    await S.auditer(c, req, `${T.entite}_transforme`, { entite: T.entite, entiteId: d.numero, details: { commande: numero } });
+    await S.auditer(c, req, 'commande_cree', { entite: 'commande', entiteId: order.id, apres: { numero, client: cl.snap.name, lignes: lines.length }, details: { origine: d.numero, vente_a_perte: d.vente_perte || undefined } });
+    return order;
+  }
+  const schConv = { params: { type: 'object', properties: { type: { type: 'string', enum: ['devis', 'proformas'] }, id: { type: 'integer' } } },
+    body: { type: 'object', additionalProperties: false, required: ['version'], properties: { version: { type: 'integer' }, date: { type: 'string', format: 'date' }, livraison: { type: 'string', format: 'date' }, bc_client: { type: 'string', maxLength: 80 }, echeance: { type: 'string', format: 'date' } } } };
+  async function lireConvertible(c, reply, T, req) {
+    const d = (await c.query(`select ${COLONNES} ${FROM} where d.id = $1 and d.type = $2 for update of d`, [req.params.id, T.type])).rows[0];
+    if (!d) { erreur(reply, 404, 'introuvable', `${T.lib} introuvable.`); return null; }
+    if (d.version !== req.body.version) { erreur(reply, 409, 'conflit_version', `${T.lib} ${d.numero} a été modifié entre-temps. Rechargez.`); return null; }
+    const ok = T.type === 'devis' ? ['emis', 'envoye', 'accepte'] : ['emise', 'envoyee', 'acceptee'];
+    if (!ok.includes(d.statut)) { erreur(reply, 400, 'transition_interdite', `${T.lib} ${d.numero} ne peut plus être transformé (statut : ${d.statut}).`); return null; }
+    return d;
+  }
+
+  app.post('/api/ventes/:type/:id/commande', { preHandler: S.exigerConnexion(), schema: schConv }, avecErreurs(async (req, reply) => {
     const T = TYPES[req.params.type];
     if (!D.peut(req.droits, 'commercial.commandes', 'creer') || !D.voit(req.droits, 'prix')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas de créer une commande.');
     return transaction(async (c) => {
-      const d = (await c.query(`select ${COLONNES} ${FROM} where d.id = $1 and d.type = $2 for update of d`, [req.params.id, T.type])).rows[0];
-      if (!d) return erreur(reply, 404, 'introuvable', `${T.lib} introuvable.`);
-      if (d.version !== req.body.version) return erreur(reply, 409, 'conflit_version', `${T.lib} ${d.numero} a été modifié entre-temps. Rechargez.`);
-      const ok = T.type === 'devis' ? ['emis', 'envoye', 'accepte'] : ['emise', 'envoyee', 'acceptee'];
-      if (!ok.includes(d.statut)) return erreur(reply, 400, 'transition_interdite', `${T.lib} ${d.numero} ne peut plus être transformé en commande (statut : ${d.statut}).`);
-      const date = req.body.date || jour();
-      const numero = (await c.query("select parametres.attribuer_numero('commande', $1::date) n", [date])).rows[0].n;
-      const cl = await client(c, d.client_id);
-      // Lignes au format de la Gestion (application 3.3.0) : prix TTC en local, HT dans la devise à l'export
-      const lines = d.lignes.map((l) => ({ id: rid(), src: l.produit ? 'produit_fini' : 'article', article: l.produit || '', designation: l.designation,
-        staff: '', color: l.couleur || '', size: l.taille || '', qty: l.qte,
-        pu: l.remise ? (d.devise === 'DT' ? r3 : r2)(l.pu * (1 - l.remise / 100)) : l.pu, service: !!l.service }));
-      const total = r3(lines.reduce((s, l) => s + l.qty * l.pu, 0));
-      const now = new Date().toISOString();
-      const order = { id: rid(), number: numero, clientPO: req.body.bc_client || d.ref_client || '', client: cl.snap, date, delivery: req.body.livraison || '',
-        lines, advances: [], products: [], status: 'en_cours', total, createdAt: now, updatedAt: now,
-        origine: { type: T.type, id: Number(d.id), numero: d.numero },
-        ...(d.devise !== 'DT' ? { currency: d.devise, export: true, pricesTTC: false, incoterm: d.incoterm, langue: d.langue, taux_change: d.taux_change } : {}) };
-      await c.query(`insert into commercial.documents (collection, id, donnees, maj_par) values ('orders', $1, $2, $3)`, [order.id, order, req.utilisateur.id]);
-      await c.query(`update ventes.documents set statut = $2, commande_id = $3, commande_num = $4, version = version + 1, maj_le = now(), maj_par = $5 where id = $1`,
-        [d.id, T.type === 'devis' ? 'transforme' : 'transformee', order.id, numero, req.utilisateur.id]);
-      // la proforma issue d'un devis : le devis d'origine pointe aussi vers la commande (traçabilité amont ↔ aval)
-      if (d.origine_id) await c.query('update ventes.documents set commande_id = $2, commande_num = $3 where id = $1', [d.origine_id, order.id, numero]);
-      await S.auditer(c, req, `${T.entite}_transforme`, { entite: T.entite, entiteId: d.numero, details: { commande: numero } });
-      await S.auditer(c, req, 'commande_cree', { entite: 'commande', entiteId: order.id, apres: { numero, client: cl.snap.name, lignes: lines.length }, details: { origine: d.numero, vente_a_perte: d.vente_perte || undefined } });
+      const d = await lireConvertible(c, reply, T, req); if (!d) return reply;
+      const order = await creerCommande(c, req, T, d, req.body);
       reply.code(201);
-      return { ok: true, commande: { id: order.id, numero } };
+      return { ok: true, commande: { id: order.id, numero: order.number } };
+    });
+  }));
+
+  // 0.10.1 : « Convertir en facture » — la commande est créée (traçabilité, stock au BL) puis facturée en entier,
+  // aux prix et remises du devis / de la proforma (mêmes taux de TVA et FODEC, timbre en vigueur en local).
+  app.post('/api/ventes/:type/:id/facture', { preHandler: S.exigerConnexion(), schema: schConv }, avecErreurs(async (req, reply) => {
+    const T = TYPES[req.params.type];
+    if (!D.voit(req.droits, 'prix') || !D.peut(req.droits, 'commercial.commandes', 'creer') || !D.peut(req.droits, 'commercial.factures', 'creer')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas de créer une facture.');
+    return transaction(async (c) => {
+      const d = await lireConvertible(c, reply, T, req); if (!d) return reply;
+      const order = await creerCommande(c, req, T, d, req.body);
+      const date = req.body.date || jour(), local = d.devise === 'DT';
+      const timbre = local ? ((await taux(c, 'timbre_fiscal', date)) || 0) : 0;
+      const numero = (await c.query("select parametres.attribuer_numero('facture', $1::date) n", [date])).rows[0].n;
+      const lines = d.lignes.map((l, i) => { const ol = order.lines[i];
+        return { designation: l.designation, article: l.produit || '', staff: l.staff || '', color: l.couleur || '', size: l.taille || '', qty: l.qte, pu: l.pu, remise: +l.remise || 0,
+          ...(l.service ? { service: true } : {}), lineIds: [ol.id], qtyBy: { [ol.id]: l.qte } }; });
+      const now = new Date().toISOString();
+      const inv = { id: rid(), number: numero, date, due: req.body.echeance || plusJours(date, 30), orderId: order.id, orderNumber: order.number, clientPO: order.clientPO,
+        blIds: [], blNumbers: [], client: order.client, lines, tva: +d.tva || 0, timbre: r3(timbre), fodec: local ? +d.fodec || 0 : 0, pricesTTC: local ? d.prix_ttc !== false : false,
+        advance: 0, payments: [], paymentMode: '', note: '', status: 'validee', origine: { type: T.type, id: Number(d.id), numero: d.numero }, createdAt: now, updatedAt: now,
+        ...(local ? {} : { currency: d.devise, export: true, incoterm: d.incoterm, langue: d.langue, taux_change: d.taux_change }) };
+      await c.query(`insert into commercial.documents (collection, id, donnees, maj_par) values ('invoices', $1, $2, $3)`, [inv.id, inv, req.utilisateur.id]);
+      await S.auditer(c, req, 'facture_cree', { entite: 'facture', entiteId: inv.id, apres: { numero, statut: 'validee', client: inv.client.name, lignes: lines.length }, details: { origine: d.numero, commande: order.number, net: C.totauxFacture(inv).net } });
+      reply.code(201);
+      return { ok: true, commande: { id: order.id, numero: order.number }, facture: { id: inv.id, numero } };
     });
   }));
 

@@ -41,6 +41,27 @@
     try { const r = await api('GET', '/commercial/revision'); if (REV !== null && r.revision !== REV) { await charger(); ecouteurs.forEach((f) => f()); } } catch (_) { /* hors ligne */ }
   }, 15000);
 
+  // 0.10.1 : fichiers (scans des moyens de paiement, fiches techniques) — corps brut, type vérifié par le serveur
+  async function envoyerFichier(q, bytes, type) {
+    let r;
+    try { r = await fetch(API + '/fichiers?' + new URLSearchParams(q), { method: 'POST', credentials: 'same-origin', headers: { 'content-type': type || 'application/octet-stream' }, body: bytes }); }
+    catch (_) { throw new Error('Serveur injoignable : vérifiez la connexion Internet.'); }
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 401) post('session-expiree');
+    if (!r.ok) throw new Error(d.message || 'Erreur du serveur (' + r.status + ')');
+    return d;
+  }
+  async function ouvrirFiche(reference, commande) {
+    const w = window.open('', '_blank');
+    try {
+      const q = new URLSearchParams(); if (reference) q.set('reference', reference); if (commande) q.set('commande', commande);
+      const r = await api('GET', '/fichiers/fiche?' + q);
+      if (r.fichier) { if (w) w.location = API + '/fichiers/' + r.fichier.id; else window.open(API + '/fichiers/' + r.fichier.id, '_blank'); }
+      else if (r.illustration && w) { w.document.title = 'Fiche ' + (reference || ''); w.document.body.style.margin = '0'; const i = w.document.createElement('img'); i.src = r.illustration; i.style.maxWidth = '100%'; w.document.body.appendChild(i); }
+      return true;
+    } catch (e) { if (w) w.close(); throw e; }
+  }
+
   let CAT_VERSION;
   window.uniformDesktop = {
     version: 'erp-web',
@@ -48,6 +69,12 @@
     saveFile: async (name, bytes) => {
       const ext = String(name).split('.').pop().toLowerCase();
       if (ext === 'pdf') ouvrirPdf(name, bytes); else telecharger(name, bytes);
+      // 0.10.1 : le PDF des fiches techniques du Studio est aussi rangé sur le serveur, rattaché à la commande
+      // (double-clic sur une ligne de commande, de BL ou de facture → la fiche s'ouvre, partout dans l'ERP)
+      if (ext === 'pdf' && /^fiches-techniques-/.test(String(name))) {
+        envoyerFichier({ nature: 'fiche_technique', cible_type: 'commande', commande_slug: String(name).replace(/\.pdf$/i, ''), nom: name }, bytes, 'application/pdf')
+          .catch(() => { /* la commande n'est peut-être pas encore enregistrée : le PDF reste téléchargé */ });
+      }
       return { path: name };
     },
     catalogue: {
@@ -97,6 +124,15 @@
     },
     // ERP 0.7.0 : articles et prestations hors Studio (sans prix pour les comptes sans le droit « prix »)
     articles: () => api('GET', '/commercial/articles'),
+    // 0.10.1 : produits finis (saisie par référence), banques émettrices, fichiers
+    produits: () => api('GET', '/produits').catch(() => []),
+    codesArticle: () => api('GET', '/produits/codes-article').catch(() => []),
+    banques: () => api('GET', '/parametres/banques').catch(() => []),
+    fichiers: {
+      envoyer: (nature, cible_type, cible_id, file) => file.arrayBuffer().then((b) => envoyerFichier({ nature, cible_type, cible_id: cible_id || '', nom: file.name }, new Uint8Array(b), file.type)),
+      url: (id) => API + '/fichiers/' + id,
+      fiche: ouvrirFiche,
+    },
     openWindow: async (page) => { post('ouvrir', { page }); return true; },
     notify: async (ch, data) => { post('notify', { ch, data }); return true; },
     _rafraichir: async () => { try { await charger(); ecouteurs.forEach((f) => f()); } catch (_) { /* */ } },
