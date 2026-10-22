@@ -343,7 +343,7 @@ async function route() {
   const m = $('#contenu');
   if (mod === 'accueil') { appliquerPanneau(false); cacherCadres(); m.scrollTop = 0; return ecranAccueil(m); }
   const d = MODS[mod].f[fn];
-  if (d.t === 'cadre' && !(d.page === 'gestion' && !voit('prix'))) { appliquerPanneau(true); return montrerCadre(d.page, d.onglet); }
+  if (d.t === 'cadre' && !(d.page === 'gestion' && !voit('prix'))) { appliquerPanneau(d.page === 'studio'); return montrerCadre(d.page, d.onglet); }
   appliquerPanneau(false); cacherCadres(); m.scrollTop = 0;
   try {
     if (d.t === 'futur') return ecranFutur(m, mod, fn, d);
@@ -352,6 +352,8 @@ async function route() {
     return await ECRANS[d.ecran](m, d, mod, fn);
   } catch (x) { m.innerHTML = `<div class="vide">${esc(x.message)}</div>`; }
 }
+// Le panneau des fonctions reste ouvert partout (Commercial : Devis, Proformas, Avoirs, Produits finis… ne sont que là) ;
+// seul le Studio 3D, qui a besoin de toute la largeur, le replie par défaut.
 function appliquerPanneau(cadre) {
   const cle = cadre ? 'cadre' : 'page';
   const replie = PANNEAU_FORCE[cle] ?? cadre;
@@ -368,7 +370,7 @@ document.addEventListener('click', (e) => {
   if (b.dataset.act === 'panneau') {
     const mobile = matchMedia('(max-width:860px)').matches;
     if (mobile) { $('#v-app').classList.toggle('ouvert'); return; }
-    const cadre = !$('#cadres').classList.contains('cache'); const cle = cadre ? 'cadre' : 'page';
+    const cadre = MODS[ROUTE.mod]?.f?.[ROUTE.fn]?.page === 'studio'; const cle = cadre ? 'cadre' : 'page';
     PANNEAU_FORCE[cle] = !$('#v-app').classList.contains('replie');
     $('#v-app').classList.toggle('replie', PANNEAU_FORCE[cle]);
   }
