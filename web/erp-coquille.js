@@ -41,6 +41,7 @@ const ICO = {
   box: '<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/>',
   in: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>',
   out: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 21h14"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
   scale: '<path d="M12 3v18M5 7h14M5 7l-3 7a4 4 0 0 0 6 0zM19 7l-3 7a4 4 0 0 0 6 0z"/>',
 };
 
@@ -69,6 +70,7 @@ const MODS = {
     avoirs: { t: 'natif', ecran: 'avoirs', ico: 'doc', d: 'Avoirs (AV) partiels ou totaux sur facture' },
     export: { t: 'natif', ecran: 'colisage', fonction: 'factures', prix: true, ico: 'truck', libelle: 'Documents export', d: 'Colisage (packing list) des factures export' },
     reglements: { t: 'cadre', page: 'gestion', onglet: 'invoices', ico: 'check', d: 'Avances (commande) et règlements (facture)', sansPrix: 'interdit' },
+    moyens_paiement: { t: 'natif', ecran: 'moyensPaiement', fonction: 'reglements', prix: true, ico: 'search', libelle: 'Moyens de paiement', d: 'Chèques, effets, virements par client : recherche et scans' },
     produits_finis: { t: 'cadre', page: 'produits', ico: 'box', libelle: 'Produits finis', d: 'Références, BOM, gamme, prix de revient et prix' },
     articles: { t: 'natif', ecran: 'articlesVente', ico: 'box', libelle: 'Articles et prestations', d: 'Vendus hors Studio : transport, réassort, services' },
   } },
@@ -165,10 +167,37 @@ function csv(nom, lignes) {
 }
 const nombreCsv = (v) => String(r3(v)).replace('.', ',');
 
+// 0.10.1 : grandes fenêtres de saisie en plein écran, barre ─ (réduire) ☐ (fenêtre / plein écran) ✕ (fermer)
+let FEN_MINI = false;
+// passe la fenêtre de modale à non modale (ou l'inverse) sans déclencher ses écouteurs « close » (verrous, nettoyage)
+// (l'événement « close » est envoyé plus tard, de façon asynchrone : on compte les fermetures techniques à ignorer)
+function basculerSansFermer(d, modale) {
+  if (!d.__garde) { d.__garde = true; d.__saut = 0; d.addEventListener('close', (e) => { if (d.__saut > 0) { d.__saut--; e.stopImmediatePropagation(); } }, { capture: true }); }
+  d.__saut++; d.close();
+  if (modale) d.showModal(); else d.show();
+}
 function grandeFenetre(html, onValider) {
-  const d = $('#fen'); d.style.width = 'min(940px, calc(100% - 24px))';
-  d.addEventListener('close', () => { d.style.width = ''; }, { once: true });
+  if (FEN_MINI) { toast('Une fenêtre est réduite en bas de l’écran : reprenez-la ou fermez-la d’abord.', true); $('#fen-mini')?.classList.add('flash'); return; }
+  const d = $('#fen'); d.classList.add('grande', 'plein');
+  d.addEventListener('close', () => { d.classList.remove('grande', 'plein'); FEN_MINI = false; $('#fen-mini')?.remove(); }, { once: true });
   fenetre(html, onValider);
+  const f = $('#fen-form'), h = f.querySelector('h3'); if (!h) return;
+  const titre = h.textContent;
+  const barre = document.createElement('div'); barre.className = 'fen-barre';
+  barre.innerHTML = '<button type="button" data-w="min" title="Réduire">─</button><button type="button" data-w="max" title="Fenêtre">❐</button><button type="button" data-w="x" class="wx" title="Fermer">✕</button>';
+  h.classList.add('fen-titre'); h.appendChild(barre);
+  barre.onclick = (e) => {
+    const b = e.target.closest('[data-w]'); if (!b) return;
+    if (b.dataset.w === 'x') { if (confirm('Fermer sans enregistrer ?')) d.close(); }
+    else if (b.dataset.w === 'max') { const p = d.classList.toggle('plein'); b.textContent = p ? '❐' : '☐'; b.title = p ? 'Fenêtre' : 'Plein écran'; }
+    else {
+      // réduire : la fenêtre reste ouverte (saisie conservée) mais devient non modale et cachée
+      FEN_MINI = true; d.classList.add('mini'); basculerSansFermer(d, false);
+      const m = document.createElement('button'); m.id = 'fen-mini'; m.type = 'button'; m.innerHTML = `<span>▲</span> ${esc(titre)} <small>(réduite — cliquez pour reprendre)</small>`;
+      m.onclick = () => { FEN_MINI = false; d.classList.remove('mini'); basculerSansFermer(d, true); m.remove(); };
+      document.body.appendChild(m);
+    }
+  };
 }
 
 // totaux d'une facture : même calcul que l'application 3.3.0 (docs-pdf.js · invoiceTotals)
@@ -314,8 +343,8 @@ function dessinerPanneau() {
   const m = ACC.modules.find((x) => x.code === ROUTE.mod);
   const fs = fonctionsVues(ROUTE.mod);
   const enService = fs.filter((f) => f.t !== 'futur'), aVenir = fs.filter((f) => f.t === 'futur');
-  const item = (f) => `<a href="${lien(ROUTE.mod, f.code)}" class="${f.code === ROUTE.fn ? 'on' : ''} ${f.t === 'futur' ? 'futur' : ''}"><span class="ico">${SVG(ICO[f.ico] || ICO.doc)}</span><span class="tx">${esc(f.libelle)}<small>${esc(f.d || '')}</small></span>${f.t === 'futur' ? `<span class="lotb">lot ${f.lot}</span>` : ''}</a>`;
-  p.innerHTML = `<div class="tete"><span class="n">MODULE ${String(m.numero).padStart(2, '0')}</span><h2>${esc(m.libelle)}</h2><p>${esc(MODS[ROUTE.mod].desc)}</p></div>
+  const item = (f) => `<a title="${esc(f.libelle + ' — ' + (f.d || ''))}" href="${lien(ROUTE.mod, f.code)}" class="${f.code === ROUTE.fn ? 'on' : ''} ${f.t === 'futur' ? 'futur' : ''}"><span class="ico">${SVG(ICO[f.ico] || ICO.doc)}</span><span class="tx">${esc(f.libelle)}<small>${esc(f.d || '')}</small></span>${f.t === 'futur' ? `<span class="lotb">lot ${f.lot}</span>` : ''}</a>`;
+  p.innerHTML = `<div class="tete"><button class="mode-pan" data-act="mode-panneau" title="${modeIcones() ? 'Affichage détaillé (icônes + libellés)' : 'Affichage icônes (bande étroite)'}">${modeIcones() ? '»' : '«'}</button><span class="n">MODULE ${String(m.numero).padStart(2, '0')}</span><h2>${esc(m.libelle)}</h2><p>${esc(MODS[ROUTE.mod].desc)}</p></div>
     <nav class="fonctions">${enService.length ? `<h4>En service</h4>${enService.map(item).join('')}` : ''}${aVenir.length ? `<h4>Prévu</h4>${aVenir.map(item).join('')}` : ''}</nav>`;
 }
 function dessinerFil() {
@@ -364,6 +393,13 @@ function appliquerPanneau(cadre) {
   const cle = cadre ? 'cadre' : 'page';
   const replie = PANNEAU_FORCE[cle] ?? cadre;
   $('#v-app').classList.toggle('replie', replie);
+  $('#v-app').classList.toggle('icones', !replie && modeIcones());
+}
+// 0.10.1 : bande de gauche en mode « icônes » (étroite, libellé au survol) ou « détaillé » (icône + libellé + description) — mémorisé sur ce poste
+const modeIcones = () => { try { return localStorage.getItem('erp.panneau') === 'icones'; } catch (_) { return false; } };
+function basculerModePanneau() {
+  const v = !modeIcones(); try { localStorage.setItem('erp.panneau', v ? 'icones' : 'detail'); } catch (_) { /* */ }
+  $('#v-app').classList.toggle('icones', v); dessinerPanneau();
 }
 addEventListener('hashchange', () => {
   if (RS.modifie && !confirm('Des changements de droits ne sont pas enregistrés. Quitter la page ?')) { history.back(); return; }
@@ -373,6 +409,7 @@ addEventListener('beforeunload', (e) => { if (RS.modifie || CADRES.studio) e.pre
 
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'mode-panneau') { basculerModePanneau(); return; }
   if (b.dataset.act === 'panneau') {
     const mobile = matchMedia('(max-width:860px)').matches;
     if (mobile) { $('#v-app').classList.toggle('ouvert'); return; }
@@ -530,8 +567,8 @@ function detailCommande(g, o) {
   grandeFenetre(`<h3>Commande ${esc(o.number)} · ${esc(o.client?.name || '')}</h3>
     <div class="kv-g"><span>Date</span><b>${jour(o.date)}</b><span>Livraison promise</span><b>${jour(o.delivery)}</b><span>BC client</span><b>${esc(o.clientPO || '—')}</b><span>Marquage</span><b>${esc(MARQUAGE[o.printBox] || o.printBox || '—')}</b></div>
     ${prods.length ? `<div class="vignettes">${prods.map((p) => `<figure><img src="${esc(p.thumb)}" alt=""><figcaption><b>${esc(p.garment || p.name || '')}</b><span>${esc(p.staff || '')} · ${+p.qty || 0} pcs</span></figcaption></figure>`).join('')}</div>` : ''}
-    <div class="panneau" style="max-height:46vh;overflow:auto"><table><thead><tr><th>Article</th><th>Service</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th><th class="n">Livrée</th></tr></thead><tbody>
-      ${lignes.map((l) => `<tr><td>${esc(l.designation)}</td><td>${esc(l.staff || '')}</td><td>${esc(l.color || '')}</td><td class="mono">${esc(l.size || '')}</td><td class="n">${+l.qty || 0}</td><td class="n">${Math.min(+l.qty || 0, a.livre[l.id] || 0)}</td></tr>`).join('')}
+    <div class="panneau" style="max-height:46vh;overflow:auto"><p class="mute small">Double-cliquez une ligne pour ouvrir la fiche technique (PDF du Studio 3D ou fichier joint).</p><table><thead><tr><th>Article</th><th>Service</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th><th class="n">Livrée</th></tr></thead><tbody>
+      ${lignes.map((l) => `<tr data-fiche="${esc(l.article || '')}" data-fo="${esc(o.id)}" title="Double-clic : fiche technique"><td>${esc(l.designation)}</td><td>${esc(l.staff || '')}</td><td>${esc(l.color || '')}</td><td class="mono">${esc(l.size || '')}</td><td class="n">${+l.qty || 0}</td><td class="n">${Math.min(+l.qty || 0, a.livre[l.id] || 0)}</td></tr>`).join('')}
     </tbody><tfoot><tr><td colspan="4"><b>Total</b></td><td class="n"><b>${a.tot}</b></td><td class="n"><b>${a.fait}</b></td></tr></tfoot></table></div>
     <p class="mute small" style="margin:10px 0 0">La fiche technique se génère depuis le Studio 3D ou la Gestion. Au lot 7, chaque commande validée donnera son ordre de fabrication (coupe → marquage → assemblage).</p>
     <div class="pied"><button class="btn" value="ok">Fermer</button></div>`, () => true);
@@ -587,6 +624,58 @@ async function imprimerFactureDT(f) {
     setTimeout(() => URL.revokeObjectURL(url), 120000);
   } catch (x) { toast(x.message, true); }
 }
+
+/* ---------- 0.10.1 : moyens de paiement — recherche par client (avances + règlements, chèques, effets, virements, scans) ---------- */
+let BANQUES = null;
+const banques = async () => BANQUES || (BANQUES = await api('GET', '/api/parametres/banques').catch(() => []));
+ECRANS.moyensPaiement = async (m) => {
+  if (exigeVis(m, 'Moyens de paiement', ['prix'])) return;
+  const [L, B] = await Promise.all([api('GET', '/api/reglements/recherche'), banques()]);
+  const clients = [...new Set(L.map((x) => x.client).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
+  const modes = [...new Set(L.map((x) => x.mode).filter(Boolean))].sort();
+  const F = { client: '', type: '', mode: '', banque: '', num: '', du: '', au: '', edu: '', eau: '', min: '', max: '', scan: '' };
+  const sel = (k, opts, tout) => `<select data-f="${k}"><option value="">${tout}</option>${opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select>`;
+  m.innerHTML = entete('Moyens de paiement', 'Toutes les avances (commandes) et tous les règlements (factures) : chèques, effets, virements, espèces. Filtrez par client, banque, n° de document, dates, échéance ou montant ; double-cliquez une ligne pour voir le scan.',
+    '<button class="btn ghost" data-act="mp-csv">Exporter (CSV)</button>') +
+    `<div class="panneau filtres-mp"><div class="grille-f">
+      <label>Client${sel('client', clients.map((c) => [c, c]), 'Tous les clients')}</label>
+      <label>Type${sel('type', [['avance', 'Avance (commande)'], ['reglement', 'Règlement (facture)']], 'Tous')}</label>
+      <label>Mode${sel('mode', modes.map((x) => [x, x]), 'Tous les modes')}</label>
+      <label>Banque${sel('banque', B.map((b) => [b.code, b.nom]), 'Toutes les banques')}</label>
+      <label>N° document<input data-f="num" type="search" placeholder="N° chèque, effet, virement, facture…"></label>
+      <label>Date du<input data-f="du" type="date"></label><label>au<input data-f="au" type="date"></label>
+      <label>Échéance du<input data-f="edu" type="date"></label><label>au<input data-f="eau" type="date"></label>
+      <label>Montant min.<input data-f="min" type="number" step="0.001" min="0"></label><label>max.<input data-f="max" type="number" step="0.001" min="0"></label>
+      <label>Scan${sel('scan', [['oui', 'Avec scan'], ['non', 'Sans scan']], 'Tous')}</label>
+      <div class="pied-f"><button class="btn ghost sm" data-act="mp-raz">Effacer les filtres</button></div></div></div>
+    <div id="mp-chiffres"></div><div class="panneau" style="overflow:auto" id="mp-liste"></div>`;
+  const filtre = () => L.filter((x) => (!F.client || x.client === F.client) && (!F.type || x.type === F.type) && (!F.mode || x.mode === F.mode) && (!F.banque || x.banque === F.banque)
+    && (!F.num || [x.numero_doc, x.doc_numero, x.recu].join(' ').toLowerCase().includes(F.num.toLowerCase()))
+    && (!F.du || x.date >= F.du) && (!F.au || x.date <= F.au) && (!F.edu || (x.echeance && x.echeance >= F.edu)) && (!F.eau || (x.echeance && x.echeance <= F.eau))
+    && (F.min === '' || x.montant >= +F.min) && (F.max === '' || x.montant <= +F.max) && (!F.scan || (F.scan === 'oui') === !!x.scan));
+  let V = [];
+  const dessiner = () => {
+    V = filtre();
+    const parDev = {}; for (const x of V) parDev[x.devise] = r3((parDev[x.devise] || 0) + x.montant);
+    $('#mp-chiffres').innerHTML = `<div class="chiffres"><div class="chiffre"><b>${V.length}</b><span>moyen(s) de paiement</span></div>${Object.entries(parDev).map(([d, v]) => `<div class="chiffre"><b>${dt(v)}</b><span>total ${esc(d)}</span></div>`).join('')}
+      <div class="chiffre ${V.some((x) => x.echeance && x.echeance > new Date().toISOString().slice(0, 10)) ? 'alerte' : ''}"><b>${V.filter((x) => x.echeance && x.echeance > new Date().toISOString().slice(0, 10)).length}</b><span>à échéance future</span></div><div class="chiffre"><b>${V.filter((x) => !x.scan).length}</b><span>sans scan</span></div></div>`;
+    $('#mp-liste').innerHTML = V.length ? `<table class="nombres"><thead><tr><th>Date</th><th>Client</th><th>Type</th><th>Document</th><th>Mode</th><th>N° document</th><th>Banque</th><th>Échéance</th><th class="n">Montant</th><th>Scan</th></tr></thead><tbody>
+      ${V.map((x, i) => `<tr class="cliquable" data-i="${i}"><td>${jour(x.date)}</td><td><b>${esc(x.client)}</b></td><td>${x.type === 'avance' ? 'Avance' : 'Règlement'}${x.origine === 'compta' ? ' <span class="mute small">(compta)</span>' : ''}</td><td class="mono small">${esc(x.doc_numero)}${x.recu ? `<div class="mute">reçu ${esc(x.recu)}</div>` : ''}</td>
+        <td>${esc(x.mode)}</td><td class="mono small">${esc(x.numero_doc || '—')}</td><td>${esc(x.banque_nom || '—')}</td><td>${x.echeance ? jour(x.echeance) : '—'}</td><td class="n"><b>${dt(x.montant)}</b> ${x.devise !== 'DT' ? esc(x.devise) : ''}</td>
+        <td>${x.scan ? `<button class="btn ghost sm" data-scan="${x.scan.id}" title="${esc(x.scan.nom)}">Voir</button>` : '<span class="mute small">—</span>'}</td></tr>`).join('')}</tbody></table>` : '<div class="vide">Aucun moyen de paiement ne correspond aux filtres.</div>';
+  };
+  const ouvrirScan = (id) => window.open('/api/fichiers/' + id, '_blank');
+  m.oninput = m.onchange = (e) => { const k = e.target.dataset.f; if (k === undefined) return; F[k] = e.target.value; dessiner(); };
+  m.onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.scan) return ouvrirScan(b.dataset.scan);
+    if (b.dataset.act === 'mp-raz') { for (const k of Object.keys(F)) F[k] = ''; m.querySelectorAll('[data-f]').forEach((x) => { x.value = ''; }); dessiner(); }
+    if (b.dataset.act === 'mp-csv') csv('moyens-de-paiement.csv', [['Date', 'Client', 'Type', 'Document', 'Reçu', 'Mode', 'N° document', 'Banque', 'Échéance', 'Montant', 'Devise', 'Scan'],
+      ...V.map((x) => [x.date, x.client, x.type === 'avance' ? 'Avance' : 'Règlement', x.doc_numero, x.recu || '', x.mode, x.numero_doc, x.banque_nom, x.echeance, nombreCsv(x.montant), x.devise, x.scan ? 'oui' : 'non'])]);
+  };
+  m.ondblclick = (e) => { const tr = e.target.closest('tr[data-i]'); if (!tr) return; const x = V[+tr.dataset.i]; if (x.scan) ouvrirScan(x.scan.id); else toast('Aucun scan pour ce moyen de paiement : ajoutez-le depuis la facture ou la commande (bouton « Scan »).', true); };
+  dessiner();
+};
 
 /* ---------- BOM : produits du catalogue ---------- */
 ECRANS.articles = async (m) => {
@@ -751,7 +840,7 @@ ECRANS.articlesVente = async (m) => {
 const ST_ENC = { valide: ['Encaissé', 'vig'], portefeuille: ['En portefeuille', 'fut'], remis: ['Remis en banque', 'vig'], impaye: ['Impayé', 'ret'], annule: ['Annulé', 'anc'] };
 ECRANS.encaissements = async (m) => {
   if (exigeVis(m, 'Encaissements et lettrage', ['prix', 'encours'])) return;
-  const [L, g, opt] = await Promise.all([api('GET', '/api/compta/encaissements'), gestion(true), optionsCompta()]);
+  const [L, g, opt] = await Promise.all([api('GET', '/api/compta/encaissements'), gestion(true), optionsCompta(), banques()]);
   const cree = peut('compta_clients.lettrage', 'creer'), ann = peut('compta_clients.lettrage', 'annuler');
   const pf = L.filter((x) => x.statut === 'portefeuille');
   m.innerHTML = entete('Encaissements et lettrage', 'Un paiement du client solde une ou plusieurs factures. La part retenue à la source par le client est enregistrée à part (Comptabilité générale › Retenues). Les règlements apparaissent aussi dans la facture (Gestion).',
@@ -782,7 +871,7 @@ ECRANS.encaissements = async (m) => {
         <div class="champ"><label for="en-date">Date</label><input type="date" id="en-date" name="date" value="${iso()}" required></div>
         <div class="champ"><label for="en-mode">Mode</label><select id="en-mode" name="mode">${opt.modes.map((x) => `<option>${esc(x)}</option>`).join('')}</select></div>
         <div class="champ"><label for="en-ref">Référence (n° chèque, virement…)</label><input id="en-ref" name="reference" maxlength="60"></div>
-        <div class="champ"><label for="en-bq">Banque du client</label><input id="en-bq" name="banque" maxlength="60"></div>
+        <div class="champ"><label for="en-bq">Banque du client</label><input id="en-bq" name="banque" maxlength="60" list="en-bql" autocomplete="off"><datalist id="en-bql">${(BANQUES || []).map((b) => `<option value="${esc(b.nom)}">`).join('')}</datalist></div>
         <div class="champ" id="en-ech-c" hidden><label for="en-ech">Échéance du chèque / de l’effet</label><input type="date" id="en-ech" name="echeance"></div></div>
       <div id="en-f"><div class="vide small">Choisissez le client pour voir ses factures à régler.</div></div>
       <div class="pied"><span class="mute small" id="en-tot" style="margin-right:auto"></span><button class="btn ghost" value="annuler" formnovalidate>Annuler</button><button class="btn" value="ok">Enregistrer l’encaissement</button></div>`, async (f) => {

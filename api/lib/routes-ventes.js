@@ -508,7 +508,7 @@ module.exports = async function routesVentes(app) {
     const credite = creditees(await avoirsDe(pool, f.id, sauf));
     const t = C.totauxFacture(f);
     return { id: f.id, numero: f.number, date: f.date, client: f.client, devise: devFacture(f), statut: f.status, net: t.net, reste: r3(C.resteFacture(f) + (sauf ? (f.payments || []).filter((p) => p.avoir === sauf).reduce((x, p) => x + (+p.amount || 0), 0) : 0)), prix_ttc: f.pricesTTC !== false, tva: +f.tva || 0, fodec: +f.fodec || 0, timbre: r3(+f.timbre || 0),
-      lignes: (f.lines || []).map((l, i) => ({ index: i, designation: l.designation, qte: +l.qty || 0, pu: +l.pu || 0, remise: +l.remise || 0, credite: credite[i] || 0, creditable: r3((+l.qty || 0) - (credite[i] || 0)) })) };
+      lignes: (f.lines || []).map((l, i) => ({ index: i, designation: l.designation, article: l.article || '', service: !!(l.service || l.artType === 'prestation'), qte: +l.qty || 0, pu: +l.pu || 0, remise: +l.remise || 0, credite: credite[i] || 0, creditable: r3((+l.qty || 0) - (credite[i] || 0)) })) };
   });
 
   // ============ liste de colisage d'une facture export ============

@@ -12,6 +12,21 @@ const ST_V = {
 const ENT_V = { devis: 'devis', proformas: 'proforma', avoirs: 'avoir' };
 const DROIT_V = { devis: 'commercial.devis', proformas: 'commercial.proformas', avoirs: 'commercial.avoirs' };
 const INCOTERMS_V = ['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF'];
+// 0.10.1 : fiche technique d'une référence (PDF / JPEG joint, sinon illustration du produit fini)
+async function ouvrirFicheTech(reference, commande) {
+  const w = window.open('', '_blank');
+  try {
+    const q = new URLSearchParams(); if (reference) q.set('reference', reference); if (commande) q.set('commande', commande);
+    const r = await api('GET', '/api/fichiers/fiche?' + q);
+    if (r.fichier) w.location = '/api/fichiers/' + r.fichier.id;
+    else if (r.illustration) { w.document.title = 'Fiche ' + (reference || ''); const i = w.document.createElement('img'); i.src = r.illustration; i.style.maxWidth = '100%'; w.document.body.appendChild(i); }
+  } catch (x) { if (w) w.close(); toast(x.message, true); }
+}
+document.addEventListener('dblclick', (e) => {
+  const tr = e.target.closest('#fen-form tr[data-fiche], #contenu tr[data-fiche]'); if (!tr || !(tr.dataset.fiche || tr.dataset.fo) || e.target.matches('input,select,button')) return;
+  if (tr.closest('#vd-l')) return; // géré par la fiche devis / proforma
+  ouvrirFicheTech(tr.dataset.fiche, tr.dataset.fo || '');
+});
 const badgeV = (type, d) => { const s = d.expire ? ['Expiré', 'anc'] : ST_V[type][d.statut] || [d.statut, 'anc']; return `<span class="badge ${s[1]}">${s[0]}</span>`; };
 
 // envoi avec gestion de la vente à perte : le serveur refuse (409), l'utilisateur confirme, on renvoie avec confirmer_perte
@@ -67,42 +82,47 @@ async function formDevisPro(type, x, clients, produits) {
     try { await api('POST', `/api/verrous/${T.ent}/${x.id}`); }
     catch (er) { ro = true; verrouMsg = er.message; }
   }
-  const [fisc, codes] = await Promise.all([api('GET', '/api/parametres/fiscalite').catch(() => []), api('GET', '/api/produits/codes-article').catch(() => [])]);
+  const [fisc, codes, cat] = await Promise.all([api('GET', '/api/parametres/fiscalite').catch(() => []), api('GET', '/api/produits/codes-article').catch(() => []), api('GET', '/api/infographie/catalogue').then((r) => r.catalogue).catch(() => null)]);
+  const STAFFS = cat && Array.isArray(cat.staff) && cat.staff.filter(Boolean).length ? cat.staff.filter(Boolean) : ['JARDIN', 'RECEPTION', 'HOUSEKEEPING', 'ADMINISTRATION', 'ANIMATION', 'LINGERIE', 'CUISINE', 'F&B'];
+  const fodecDefaut = (fisc.find((f) => f.code === 'fodec' && f.en_vigueur) || { valeur: 0 }).valeur;
   const libCode = Object.fromEntries(codes.map((c) => [c.code, c.libelle]));
   const tvaDefaut = (fisc.find((f) => f.code === 'tva_normale' && f.en_vigueur) || { valeur: 19 }).valeur;
   let cl = clients.find((c) => c.id === x?.client_id) || null;
   const estExport = () => cl?.type_client === 'export';
   const devise = () => (estExport() && ['EUR', 'USD'].includes(cl?.devise) ? cl.devise : 'DT');
-  let lignes = x ? x.lignes.map((l) => ({ ...l })) : [{ produit: '', designation: '', couleur: '', taille: '', qte: 1, pu: 0, remise: 0, service: false }];
+  // 0.10.1 : prix saisis et affichés H.T. ; un ancien document saisi TTC est affiché en H.T. et réenregistré dans son mode
+  const ttcDoc = !!x && x.prix_ttc !== false && x.devise === 'DT';
+  const kL = (l) => (ttcDoc ? (1 + (+x.tva || 0) / 100) * (l.service ? 1 : 1 + (+x.fodec || 0) / 100) : 1);
+  let lignes = x ? x.lignes.map((l) => ({ ...l, _pu0: l.pu, _ht0: r3((+l.pu || 0) / kL(l)), pu: r3((+l.pu || 0) / kL(l)) })) : [{ produit: '', designation: '', staff: '', couleur: '', taille: '', qte: 1, pu: 0, remise: 0, service: false }];
   let colis = x?.colisage ? x.colisage.map((c) => ({ ...c })) : [];
   const dis = ro ? 'disabled' : '';
   const pfOpts = produits.map((p) => `<option value="${esc(p.reference)}">${esc(p.reference)} · ${esc(p.code_article)}${p.client_nom ? ' · ' + esc(p.client_nom) : ''}</option>`).join('');
 
   const totaux = () => {
-    const ttcMode = !estExport(), tva = estExport() ? 0 : (x?.tva ?? tvaDefaut), dec = devise() === 'DT' ? 3 : 2, arr = (v) => Math.round(v * 10 ** dec) / 10 ** dec;
-    let s = 0; for (const l of lignes) s += (+l.qte || 0) * (+l.pu || 0) * (1 - (+l.remise || 0) / 100);
-    s = arr(s);
-    const ht = ttcMode ? arr(s / (1 + tva / 100)) : s, mt = ttcMode ? arr(s - ht) : arr(ht * tva / 100);
-    return { ht, mt, net: arr(ht + mt), tva };
+    const tva = estExport() ? 0 : (x?.tva ?? tvaDefaut), fo = estExport() || devise() !== 'DT' ? 0 : (x?.fodec ?? fodecDefaut), dec = devise() === 'DT' ? 3 : 2, arr = (v) => Math.round(v * 10 ** dec) / 10 ** dec;
+    const tot = (l) => (+l.qte || 0) * (+l.pu || 0) * (1 - (+l.remise || 0) / 100);
+    const ht = arr(lignes.reduce((s, l) => s + tot(l), 0)), mf = arr(lignes.filter((l) => !l.service).reduce((s, l) => s + tot(l), 0) * fo / 100), mt = arr((ht + mf) * tva / 100);
+    return { ht, mf, fo, mt, net: arr(ht + mf + mt), tva };
   };
   const dessL = () => {
     const d = devise();
-    $('#vd-l').innerHTML = `<table class="nombres"><thead><tr><th>Produit fini</th><th>Désignation</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th>${prix ? `<th class="n">P.U. ${estExport() ? 'HT' : 'TTC'}</th><th class="n">Remise %</th><th class="n">Total</th>` : ''}<th></th></tr></thead><tbody>
-      ${lignes.map((l, i) => `<tr><td><input data-l="${i}" data-c="produit" list="vd-pf" value="${esc(l.produit || '')}" placeholder="${l.service ? 'Service' : 'P00126H'}" style="width:92px" ${dis || (l.service ? 'disabled' : '')}></td>
-        <td><input data-l="${i}" data-c="designation" value="${esc(l.designation)}" maxlength="300" style="width:100%;min-width:150px" ${dis}>${l.service ? '<div class="mute small">Service (transport, frais…)</div>' : ''}</td>
+    $('#vd-l').innerHTML = `<table class="nombres"><thead><tr><th>Réf.</th><th>Désignation</th><th>Service</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th>${prix ? '<th class="n">PRIX H.T.</th><th class="n">Remise %</th><th class="n">Total H.T.</th>' : ''}<th></th></tr></thead><tbody>
+      ${lignes.map((l, i) => `<tr data-fiche="${esc(l.produit || '')}" title="${l.produit ? 'Double-clic : fiche technique' : ''}"><td><input data-l="${i}" data-c="produit" list="vd-pf" value="${esc(l.produit || '')}" placeholder="${l.service ? 'Prestation' : 'P00126H'}" style="width:92px;text-transform:uppercase" ${dis || (l.service ? 'disabled' : '')}></td>
+        <td><input data-l="${i}" data-c="designation" value="${esc(l.designation)}" maxlength="300" style="width:100%;min-width:150px" ${dis}>${l.service ? '<div class="mute small">Prestation (transport, frais…)</div>' : ''}</td>
+        <td><select data-l="${i}" data-c="staff" style="max-width:130px" ${dis}><option value="">—</option>${[...new Set([...STAFFS, l.staff].filter(Boolean))].map((s2) => `<option ${s2 === l.staff ? 'selected' : ''}>${esc(s2)}</option>`).join('')}</select></td>
         <td><input data-l="${i}" data-c="couleur" value="${esc(l.couleur || '')}" style="width:72px" ${dis}></td><td><input data-l="${i}" data-c="taille" value="${esc(l.taille || '')}" style="width:48px" ${dis}></td>
         <td class="n"><input data-l="${i}" data-c="qte" type="number" step="any" min="0" value="${l.qte}" style="width:62px" ${dis}></td>
         ${prix ? `<td class="n"><input data-l="${i}" data-c="pu" type="number" step="0.001" min="0" value="${l.pu ?? 0}" style="width:84px" ${dis}></td><td class="n"><input data-l="${i}" data-c="remise" type="number" step="0.5" min="0" max="100" value="${l.remise || 0}" style="width:52px" ${dis}></td>
         <td class="n" data-tot>${md((+l.qte || 0) * (+l.pu || 0) * (1 - (+l.remise || 0) / 100), d)}</td>` : ''}
         <td>${ro || lignes.length < 2 ? '' : `<button type="button" class="btn ghost sm" data-del="${i}" aria-label="Supprimer la ligne">✕</button>`}</td></tr>`).join('')}</tbody></table>
       <datalist id="vd-pf">${pfOpts}</datalist>
-      <div class="row-f" style="justify-content:space-between;padding:8px 0">${ro ? '<span></span>' : '<span><button type="button" class="btn ghost sm" data-add>+ Produit</button> <button type="button" class="btn ghost sm" data-add-s>+ Service</button></span>'}<span class="small" id="vd-tot"></span></div>`;
+      <div class="row-f" style="justify-content:space-between;padding:8px 0">${ro ? '<span></span>' : '<span><button type="button" class="btn ghost sm" data-add>+ Produit</button> <button type="button" class="btn ghost sm" data-add-s>+ Prestation</button></span>'}<span class="small" id="vd-tot"></span></div>`;
     majTot();
   };
   const majTot = () => {
     if (!prix) return;
     const t = totaux(), d = devise();
-    $('#vd-tot').innerHTML = `HT <b>${md(t.ht, d)}</b> · TVA ${t.tva} % <b>${md(t.mt, d)}</b> · <b>Net ${md(t.net, d)}</b>${estExport() ? ' · TVA 0 % export' : ''}`;
+    $('#vd-tot').innerHTML = `Total H.T. <b>${md(t.ht, d)}</b>${t.mf ? ` · FODEC ${t.fo} % <b>${md(t.mf, d)}</b>` : ''} · TVA ${t.tva} % <b>${md(t.mt, d)}</b> · <b>Net ${md(t.net, d)}</b>${estExport() ? ' · TVA 0 % export' : ''}`;
     document.querySelectorAll('#vd-l tbody tr').forEach((tr, i) => { const l = lignes[i], c = tr.querySelector('[data-tot]'); if (l && c) c.textContent = md((+l.qte || 0) * (+l.pu || 0) * (1 - (+l.remise || 0) / 100), d); });
   };
   const dessExp = () => {
@@ -128,6 +148,7 @@ async function formDevisPro(type, x, clients, produits) {
     if (type === 'devis' && ['refuse', 'expire'].includes(st) && pV('valider')) actions.push(['statut:emis', 'Rouvrir']);
     if (prix && type === 'devis' && ['emis', 'envoye', 'accepte'].includes(st) && peut('commercial.proformas', 'creer')) actions.push(['proforma', '→ Proforma']);
     if (prix && ['emis', 'envoye', 'accepte', 'emise', 'envoyee', 'acceptee'].includes(st) && peut('commercial.commandes', 'creer')) actions.push(['commande', '→ Commande']);
+    if (prix && ['emis', 'envoye', 'accepte', 'emise', 'envoyee', 'acceptee'].includes(st) && peut('commercial.commandes', 'creer') && peut('commercial.factures', 'creer')) actions.push(['facture', 'Convertir en facture', 'cta']);
     if (!['transforme', 'transformee', 'annule', 'annulee'].includes(st) && pV('annuler')) actions.push(['statut:' + (type === 'devis' ? 'annule' : 'annulee'), 'Annuler', 'danger']);
     if (prix) actions.push(['imprimer', 'Imprimer / PDF']);
   }
@@ -159,7 +180,9 @@ async function formDevisPro(type, x, clients, produits) {
     if (ro) return true;
     if (!cl) throw new Error('Choisissez le client.');
     const body = { date: f.date.value, ref_client: f.ref_client.value.trim(), langue: f.langue.value, conditions: f.conditions.value.trim(), note: f.note.value.trim(),
-      lignes: lignes.filter((l) => String(l.designation).trim()).map((l) => ({ produit: l.service ? '' : String(l.produit || '').trim().toUpperCase(), designation: String(l.designation).trim(), couleur: l.couleur || '', taille: l.taille || '', qte: +l.qte || 0, pu: +l.pu || 0, remise: +l.remise || 0, service: !!l.service })) };
+      prix_ttc: ttcDoc,
+      lignes: lignes.filter((l) => String(l.designation).trim()).map((l) => ({ produit: l.service ? '' : String(l.produit || '').trim().toUpperCase(), designation: String(l.designation).trim(), staff: l.staff || '', couleur: l.couleur || '', taille: l.taille || '', qte: +l.qte || 0,
+        pu: l._pu0 !== undefined && r3(+l.pu) === l._ht0 ? l._pu0 : r3((+l.pu || 0) * kL(l)), remise: +l.remise || 0, service: !!l.service })) };
     if (!x?.origine_id) body.client_id = cl.id;
     body.validite = f.validite.value || null;
     if (estExport()) { body.incoterm = f.incoterm.value; body.lieu_incoterm = f.lieu_incoterm.value.trim(); body.taux_change = f.taux_change?.value ? +f.taux_change.value : null; body.colisage = colis; }
@@ -182,19 +205,20 @@ async function formDevisPro(type, x, clients, produits) {
         if (!l.designation) l.designation = `${libCode[p.code_article] || p.code_article}${p.client_nom ? ' — ' + p.client_nom : ''}`;
         if (prix && p.prix_ht && !(+l.pu)) {
           const tc = +($('#vd-tc')?.value || 0);
-          l.pu = estExport() ? (tc > 0 ? Math.round(p.prix_ht / tc * 100) / 100 : 0) : r3(p.prix_ht * (1 + tvaDefaut / 100));
+          l.pu = estExport() ? (tc > 0 ? Math.round(p.prix_ht / tc * 100) / 100 : 0) : r3(p.prix_ht);
         }
         dessL();
       }
     }
   });
+  z.addEventListener('dblclick', (e) => { const tr = e.target.closest('tr[data-fiche]'); if (tr && tr.dataset.fiche && !e.target.matches('input,select')) ouvrirFicheTech(tr.dataset.fiche); });
   z.addEventListener('input', (e) => {
     const t = e.target;
-    if (t.dataset.l !== undefined) { lignes[+t.dataset.l][t.dataset.c] = t.value; majTot(); }
+    if (t.dataset.l !== undefined) { lignes[+t.dataset.l][t.dataset.c] = t.dataset.c === 'produit' ? t.value.toUpperCase() : t.value; majTot(); }
     if (t.dataset.k !== undefined) colis[+t.dataset.k][t.dataset.c] = t.value;
   });
   z.addEventListener('click', async (e) => {
-    if (e.target.closest('[data-add]')) { lignes.push({ produit: '', designation: '', couleur: '', taille: '', qte: 1, pu: 0, remise: 0, service: false }); dessL(); }
+    if (e.target.closest('[data-add]')) { lignes.push({ produit: '', designation: '', staff: '', couleur: '', taille: '', qte: 1, pu: 0, remise: 0, service: false }); dessL(); }
     if (e.target.closest('[data-add-s]')) { lignes.push({ produit: '', designation: '', couleur: '', taille: '', qte: 1, pu: 0, remise: 0, service: true }); dessL(); }
     const d = e.target.closest('[data-del]'); if (d) { lignes.splice(+d.dataset.del, 1); dessL(); }
     if (e.target.closest('[data-kadd]')) { colis.push({ colis: String(colis.length + 1), contenu: '', quantite: 0, poids_net: 0, poids_brut: 0, dimensions: '' }); dessExp(); }
@@ -213,6 +237,12 @@ async function formDevisPro(type, x, clients, produits) {
         if (!confirm(`Créer une proforma à partir du devis ${x.numero} ? Le devis passera à « Transformé ».`)) return;
         const r = await api('POST', `/api/ventes/devis/${x.id}/proforma`, { version: x.version });
         toast(`Proforma ${r.numero} créée.`); fen.close(); location.hash = lien('commercial', 'proformas'); return route();
+      }
+      if (act === 'facture') {
+        if (!confirm(`Convertir ${x.numero} en facture ? La commande est créée en même temps (le stock sort au bon de livraison) et le ${T.lib.toLowerCase()} passe à « Transformé ».`)) return;
+        const r = await api('POST', `/api/ventes/${type}/${x.id}/facture`, { version: x.version });
+        GEST = null; versCadres({ type: 'rafraichir' });
+        toast(`Facture ${r.facture?.numero || ''} créée (commande ${r.commande?.numero || ''}) : elle est dans Commercial › Factures.`); fen.close(); return route();
       }
       if (act === 'commande') {
         const liv = prompt('Date de livraison prévue (AAAA-MM-JJ), facultatif :', '') ?? null; if (liv === null) return;
@@ -275,15 +305,17 @@ async function modifierAvoir(a) {
   grandeFenetre(`<h3>Modifier l’avoir ${esc(a.numero)} · facture ${esc(a.facture_num)}</h3><div class="msg err" hidden role="alert"></div>
     <p class="mute small">Quantité à 0 = ligne retirée de l’avoir. Le prix peut être baissé (erreur de prix), jamais au-dessus du prix facturé. L’imputation sur la facture est recalculée.</p>
     <div class="champ"><label for="am-m">Motif *</label><input id="am-m" name="motif" required maxlength="300" value="${esc(a.motif || '')}"></div>
-    <div class="panneau" style="padding:6px 10px;margin-bottom:10px;overflow:auto"><table class="nombres"><thead><tr><th>Désignation</th><th class="n">Facturé</th><th class="n">Créditable</th><th class="n">P.U. facturé ${C.prix_ttc ? 'TTC' : 'HT'}</th><th class="n">P.U. avoir</th><th class="n">Qté avoir</th><th></th></tr></thead><tbody>
-      ${C.lignes.map((l) => `<tr><td>${esc(l.designation)}</td><td class="n">${l.qte}</td><td class="n">${l.creditable}</td><td class="n">${md(l.pu, C.devise)}</td>
-        <td class="n"><input data-pu="${l.index}" type="number" step="any" min="0" max="${l.pu}" value="${cur[l.index] ? cur[l.index].pu : l.pu}" style="width:90px" ${l.creditable <= 0 ? 'disabled' : ''}></td>
+    <div class="panneau" style="padding:6px 10px;margin-bottom:10px;overflow:auto"><table class="nombres"><thead><tr><th>Désignation</th><th class="n">Facturé</th><th class="n">Créditable</th><th class="n">PRIX H.T. facturé</th><th class="n">PRIX H.T. avoir</th><th class="n">Qté avoir</th><th></th></tr></thead><tbody>
+      ${C.lignes.map((l) => `<tr data-fiche="${esc(l.article || '')}"><td>${esc(l.designation)}</td><td class="n">${l.qte}</td><td class="n">${l.creditable}</td><td class="n">${md(htAv(C, l), C.devise)}</td>
+        <td class="n"><input data-pu="${l.index}" type="number" step="any" min="0" max="${htAv(C, l)}" value="${cur[l.index] && cur[l.index].pu !== undefined ? htAv(C, { ...l, pu: cur[l.index].pu }) : htAv(C, l)}" style="width:90px" ${l.creditable <= 0 ? 'disabled' : ''}></td>
         <td class="n"><input data-q="${l.index}" type="number" step="any" min="0" max="${l.creditable}" value="${cur[l.index] ? cur[l.index].qte : 0}" style="width:80px" ${l.creditable <= 0 ? 'disabled' : ''}></td>
         <td>${cur[l.index] ? `<button type="button" class="btn ghost sm" data-raz="${l.index}" title="Retirer la ligne de l’avoir">✕</button>` : ''}</td></tr>`).join('')}</tbody></table>
       <div class="small" id="am-tot" style="padding:8px 0;text-align:right"></div></div>
     <div class="champ"><label for="am-n">Note</label><input id="am-n" name="note" maxlength="1000" value="${esc(a.note || '')}"></div>
     <div class="pied"><button class="btn ghost" value="annuler" formnovalidate>Annuler</button><button class="btn" value="ok">Enregistrer</button></div>`, async (f) => {
-    const lignes = [...f.querySelectorAll('[data-q]')].map((i) => ({ index: +i.dataset.q, qte: +i.value || 0, pu: +f.querySelector(`[data-pu="${i.dataset.q}"]`).value || 0 })).filter((l) => l.qte > 0);
+    const lignes = [...f.querySelectorAll('[data-q]')].map((i) => { const l = C.lignes.find((y) => y.index === +i.dataset.q), v = +f.querySelector(`[data-pu="${i.dataset.q}"]`).value || 0, c0 = cur[l.index];
+      const avant = c0 && c0.pu !== undefined ? c0.pu : l.pu, avantHT = htAv(C, { ...l, pu: avant });
+      return { index: l.index, qte: +i.value || 0, pu: r3(v) === avantHT ? avant : Math.min(l.pu, r3(v * kAv(C, l))) }; }).filter((l) => l.qte > 0);
     if (!lignes.length) throw new Error('Un avoir garde au moins une ligne : pour tout retirer, annulez l’avoir.');
     const r = await api('PUT', `/api/ventes/avoirs/${a.id}`, { version: a.version, motif: f.motif.value.trim(), note: f.note.value.trim(), lignes });
     GEST = null; versCadres({ type: 'rafraichir' });
@@ -293,13 +325,16 @@ async function modifierAvoir(a) {
   fen.addEventListener('close', () => api('DELETE', `/api/verrous/avoir/${a.id}`).catch(() => {}), { once: true });
   const calc = () => {
     let s = 0; z.querySelectorAll('[data-q]').forEach((i) => { const l = C.lignes.find((x) => x.index === +i.dataset.q); s += (+i.value || 0) * (+z.querySelector(`[data-pu="${i.dataset.q}"]`).value || 0) * (1 - (l.remise || 0) / 100); });
-    $('#am-tot').innerHTML = `Montant ${C.prix_ttc ? 'TTC' : 'HT'} des lignes : <b>${md(s, C.devise)}</b> ${C.timbre ? ` + timbre ${md(C.timbre, C.devise)}` : ''} (montant exact, FODEC, TVA et timbre calculés par le serveur)`;
+    $('#am-tot').innerHTML = `Montant H.T. des lignes : <b>${md(s, C.devise)}</b> ${C.timbre ? ` + timbre ${md(C.timbre, C.devise)}` : ''} (montant exact, FODEC, TVA et timbre calculés par le serveur)`;
   };
   z.addEventListener('input', calc);
   z.addEventListener('click', (e) => { const b = e.target.closest('[data-raz]'); if (b) { z.querySelector(`[data-q="${b.dataset.raz}"]`).value = 0; calc(); } });
   calc();
 }
 
+// 0.10.1 : avoirs affichés en PRIX H.T. (facture saisie TTC : conversion, le prix ne dépasse jamais le prix facturé)
+const kAv = (C, l) => (C.prix_ttc ? (1 + (+C.tva || 0) / 100) * (l.service ? 1 : 1 + (+C.fodec || 0) / 100) : 1);
+const htAv = (C, l) => r3((+l.pu || 0) / kAv(C, l));
 function nouvelAvoir(G) {
   const facs = (G.invoices || []).filter((f) => f.status !== 'annulee' && f.number).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   let C = null;
@@ -323,9 +358,9 @@ function nouvelAvoir(G) {
   const z = $('#fen-form');
   const calc = () => {
     if (!C) return;
-    let s = 0; z.querySelectorAll('[data-q]').forEach((i) => { const l = C.lignes[+i.dataset.q]; s += (+i.value || 0) * l.pu * (1 - (l.remise || 0) / 100); });
+    let ht = 0, mf = 0; z.querySelectorAll('[data-q]').forEach((i) => { const l = C.lignes[+i.dataset.q], v = (+i.value || 0) * htAv(C, l) * (1 - (l.remise || 0) / 100); ht += v; if (!l.service) mf += v * (C.fodec || 0) / 100; });
     // estimation à l'écran (le serveur fait le calcul exact) : FODEC sur les produits, TVA, + timbre de la facture
-    const kf = 1 + (C.fodec || 0) / 100, ht = C.prix_ttc ? s / (1 + C.tva / 100) / kf : s, net = (C.prix_ttc ? s : s * kf * (1 + C.tva / 100)) + (s > 0 ? (C.timbre || 0) : 0);
+    const net = (ht + mf) * (1 + C.tva / 100) + (ht > 0 ? (C.timbre || 0) : 0);
     $('#av-tot').innerHTML = `Avoir : HT <b>${md(ht, C.devise)}</b>${C.fodec ? ` · FODEC ${C.fodec} %` : ''}${C.timbre ? ` · timbre ${md(C.timbre, C.devise)}` : ''} · <b>Net ≈ ${md(net, C.devise)}</b> · reste dû sur la facture ${md(C.reste, C.devise)}${net > C.reste + 0.0005 ? ` → <b class="rouge">${md(net - C.reste, C.devise)} à rembourser</b>` : ''}`;
   };
   z.addEventListener('change', async (e) => {
@@ -333,8 +368,8 @@ function nouvelAvoir(G) {
     C = null; $('#av-l').innerHTML = '<div class="vide">Chargement…</div>';
     if (!e.target.value) return;
     try { C = await api('GET', `/api/ventes/factures/${encodeURIComponent(e.target.value)}/creditable`); } catch (x) { $('#av-l').innerHTML = `<div class="vide">${esc(x.message)}</div>`; return; }
-    $('#av-l').innerHTML = `<table class="nombres"><thead><tr><th>Désignation</th><th class="n">Facturé</th><th class="n">Déjà crédité</th><th class="n">P.U. ${C.prix_ttc ? 'TTC' : 'HT'}</th><th class="n">À créditer</th></tr></thead><tbody>
-      ${C.lignes.map((l) => `<tr><td>${esc(l.designation)}</td><td class="n">${l.qte}</td><td class="n">${l.credite || '—'}</td><td class="n">${md(l.pu, C.devise)}</td>
+    $('#av-l').innerHTML = `<table class="nombres"><thead><tr><th>Désignation</th><th class="n">Facturé</th><th class="n">Déjà crédité</th><th class="n">PRIX H.T.</th><th class="n">À créditer</th></tr></thead><tbody>
+      ${C.lignes.map((l) => `<tr data-fiche="${esc(l.article || '')}"><td>${esc(l.designation)}</td><td class="n">${l.qte}</td><td class="n">${l.credite || '—'}</td><td class="n">${md(htAv(C, l), C.devise)}</td>
         <td class="n"><input data-q="${l.index}" type="number" step="any" min="0" max="${l.creditable}" value="0" style="width:80px" ${l.creditable <= 0 ? 'disabled' : ''}></td></tr>`).join('')}</tbody></table>
       <div class="row-f" style="justify-content:space-between;padding:8px 0"><button type="button" class="btn ghost sm" data-tout>Tout créditer (avoir total)</button><span class="small" id="av-tot"></span></div>`;
     calc();

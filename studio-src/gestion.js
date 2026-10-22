@@ -563,7 +563,7 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
         }
         l.qty = Object.values(l.qtyBy || {}).reduce((s2, q2) => s2 + (+q2 || 0), 0); draw();
       } };
-    dlg.ondblclick = (e) => { const tr = e.target.closest('tr[data-fiche]'); if (tr && !e.target.matches('input,select') && tr.dataset.fiche) ouvrirFiche(tr.dataset.fiche, tr.dataset.fo); };
+    dlg.ondblclick = (e) => { const tr = e.target.closest('tr[data-fiche]'); if (tr && !e.target.matches('input,select') && (tr.dataset.fiche || tr.dataset.fo)) ouvrirFiche(tr.dataset.fiche, tr.dataset.fo); };
     dlg.onsubmit = (e) => { e.preventDefault(); done(JSON.parse(JSON.stringify(v))); };
     window.addEventListener('keydown', ek);
     dlg.hidden = false; draw();

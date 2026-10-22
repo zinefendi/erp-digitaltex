@@ -76,3 +76,17 @@ lots et rouleaux de tissu dès maintenant, sortie automatique du stock PF à la 
 - Valeurs (coûts FIFO) visibles seulement avec le droit « coûts de revient » ; le magasin voit les quantités.
 - Compta générale › Valorisation : valeur des stocks MP + PF (FIFO). Exports CSV/Excel. Mouvements jamais supprimés ni modifiés.
 - Non fait dans ce lot : écritures comptables de variation de stock (comptes à valider), réservations (lot 7 avec les OF).
+
+## 0.10.1 (22/10/2026) — corrections Gestion commerciale, migration 011
+Demandes de l'utilisateur du 22/10/2026 (module 02).
+- **Bande de gauche** : bouton « « / » » pour passer en mode icônes (bande étroite, libellé au survol) ou détaillé ; mémorisé sur le poste.
+- **Fenêtres de saisie** plein écran avec ─ (réduire en bas de l'écran, saisie conservée), ☐ (fenêtre / plein écran), ✕ (fermer). Le mot « libre » disparaît (« + Facture »).
+- **Saisie par référence** : tableau Réf | Désignation | Service | Qté | PRIX H.T. | Remise % | Total H.T. ; en tapant une référence ou un mot, liste des produits finis et articles (Réf, désignation, type, PRIX H.T.).
+- **PRIX H.T. partout** (commandes, BL, factures, devis, proformas, avoirs). Nouveaux documents saisis H.T. ; les documents déjà émis gardent leur mode (affichage converti en H.T.). Les commandes restent stockées TTC (format Studio), affichées H.T.
+- **Remise par ligne** sur facture, devis, proforma.
+- **Convertir en facture** : depuis un devis, une proforma (la commande est créée en même temps, le stock sort au BL) et depuis un BL.
+- **Facture directe** et **BL direct** (la commande est créée automatiquement, origine « BL direct »). Lignes venant d'une commande saisie en **Infographie** : seuls le prix et la remise se modifient (contrôlé aussi par le serveur).
+- **Fiches techniques** : double-clic sur une ligne (commande, BL, facture, devis, proforma, avoir, écrans sans prix) → PDF des fiches du Studio 3D (enregistré automatiquement à la génération) ou PDF / JPEG joint à la commande (« Joindre une fiche technique ») ou au produit fini, sinon l'illustration du produit fini.
+- **Règlements et avances** : n° de document (chèque, effet, virement), banque (liste BCT 2026 : 25 établissements + Autre), échéance, **scan** (photo ou PDF, appareil photo sur tablette/téléphone).
+- **Nouvel écran Commercial › Moyens de paiement** : recherche par client, type, mode, banque, n° de document, dates, échéance, montants, avec/sans scan ; totaux, export CSV, ouverture du scan.
+- Migration 011 : `parametres.banques`, `commercial.fichiers` (fichiers stockés dans `/data/fichiers`, jamais effacés : retrait tracé au journal d'audit).
