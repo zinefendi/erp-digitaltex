@@ -44,7 +44,7 @@ test('reprise : société, préfixes et compteurs de l’application 3.3.0', asy
   assert.deepEqual(s.a_completer, ['registre de commerce', 'RIB']);
   const n = (await appel('GET', '/api/parametres/numerotation', { jeton: J.admin })).json();
   const par = Object.fromEntries(n.map((x) => [x.type, x]));
-  assert.equal(n.length, 12); // 8 + 4 ajoutés en 0.7.0 (encaissement, facture fournisseur, règlement fournisseur, certificat RAS)
+  assert.equal(n.length, 14); // 8 + 4 ajoutés en 0.7.0 (encaissement, facture fournisseur, règlement fournisseur, certificat RAS) + 2 en 0.10.0 (réception matières, inventaire)
   assert.equal(par.commande.prochain, `CMD-${new Date().getFullYear()}-0003`);
   assert.equal(par.facture.prochain, `FAC-${new Date().getFullYear()}-0003`);
   assert.equal(par.bl.prochain, `BL-${new Date().getFullYear()}-0002`);

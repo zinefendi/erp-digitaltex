@@ -11,6 +11,7 @@ const D = require('./droits');
 const P = require('./prix-studio');
 const V = require('./ventes');
 const C = require('./calculs');
+const ST = require('./stocks');
 
 const GLB_DIR = process.env.ERP_GLB_DIR || '/data/glb';
 const FACTORY = process.env.ERP_CATALOGUE_USINE || '/data/catalogue-usine.json';
@@ -327,6 +328,15 @@ module.exports = async function routesMetier(app) {
       const act = { clients: 'client', orders: 'commande', bls: 'bl', invoices: 'facture' }[col];
       await S.auditer(c, req, avant ? `${act}_modifie` : `${act}_cree`, { entite: act, entiteId: rec.id, avant: resume(avant), apres: resume(rec), details: sansPrix && col === 'orders' ? { prix: 'calculés par le serveur' } : undefined });
       if (lignesModifiees) await S.auditer(c, req, `${act}_lignes_modifiees`, { entite: act, entiteId: rec.number || rec.id, avant: lignesModifiees.avant, apres: lignesModifiees.apres });
+      // 0.10.0 : un BL (création, modification, annulation) met à jour le stock produits finis dans la même transaction.
+      // Stock insuffisant : le BL passe quand même (décision utilisateur du 22/10/2026), l'alerte est tracée.
+      if (col === 'bls') {
+        const alertes = await ST.synchroniserBL(c, req.utilisateur, rec);
+        if (alertes.length) {
+          await S.auditer(c, req, 'stock_pf_negatif', { entite: 'bl', entiteId: rec.number || rec.id, details: { lignes: alertes } });
+          return { ...rec, alertes_stock: alertes };
+        }
+      }
       return sansPrix ? D.masquer(req.droits, rec) : rec;
     });
   });

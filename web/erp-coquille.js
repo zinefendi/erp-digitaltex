@@ -103,18 +103,19 @@ const MODS = {
     nomenclatures: { t: 'natif', ecran: 'articles', ico: 'grid', libelle: 'Produits du catalogue', d: 'Un produit du catalogue = une BOM' },
     gammes: { t: 'futur', lot: 7, ico: 'clock', d: 'Opérations et temps standard', cdc: ['Gamme opératoire : opérations, temps standard, poste ou compétence.', 'Coût de revient standard (matières + main-d’œuvre + marquage) comparé au coût réel de l’OF.'] },
   } },
-  stock_mp: { court: 'Stock MP', desc: 'Fichier des matières aujourd’hui ; mouvements de stock au lot 6.', f: {
-    articles: { t: 'natif', ecran: 'registre', reg: 'articles_mp', ico: 'box', d: 'Tissus, fils, accessoires, emballages' },
-    entrees: { t: 'futur', lot: 6, ico: 'in', d: 'Réceptions fournisseurs', cdc: ['Réception fournisseur, lots et rouleaux de tissu (n° de lot, bain de teinture, métrage restant).'] },
-    sorties: { t: 'futur', lot: 6, ico: 'out', d: 'Sorties vers les OF', cdc: ['Sortie vers OF, retour, transfert, ajustement ; chaque mouvement est tracé.', 'Réservations pour les OF, seuils minimum et alertes de réapprovisionnement.'] },
-    inventaires: { t: 'futur', lot: 6, ico: 'scale', d: 'Inventaires et valorisation', cdc: ['Inventaire périodique ou tournant, écarts justifiés, valorisation (méthode à valider avec le comptable).'] },
+  stock_mp: { court: 'Stock MP', desc: 'Matières : réceptions par lot et rouleau, sorties, inventaires, valorisation FIFO (0.10.0).', f: {
+    articles: { t: 'natif', ecran: 'etatMP', ico: 'box', libelle: 'État du stock', d: 'Physique, réservé, disponible, alertes' },
+    fiches: { t: 'natif', ecran: 'registre', reg: 'articles_mp', fonction: 'articles', ico: 'list', libelle: 'Articles matières', d: 'Tissus, fils, accessoires, emballages' },
+    entrees: { t: 'natif', ecran: 'receptionsMP', ico: 'in', libelle: 'Réceptions', d: 'Entrées fournisseurs, lots et rouleaux' },
+    sorties: { t: 'natif', ecran: 'mouvementsMP', ico: 'out', libelle: 'Mouvements', d: 'Sorties, retours, transferts, ajustements' },
+    inventaires: { t: 'natif', ecran: 'inventaires', stock: 'mp', ico: 'scale', d: 'Comptage, écarts justifiés' },
   } },
-  stock_pf: { court: 'Stock PF', desc: 'Stock produits finis par produit, taille et couleur, au lot 6.', f: {
-    stock: { t: 'futur', lot: 6, ico: 'box', d: 'Par produit, taille, couleur', cdc: ['Stock par produit, taille et couleur ; emplacements.'] },
-    entrees: { t: 'futur', lot: 6, ico: 'in', d: 'Entrées depuis la production', cdc: ['Entrée automatique à la validation de l’assemblage de l’OF.'] },
-    sorties: { t: 'futur', lot: 6, ico: 'out', d: 'Sorties par BL, retours', cdc: ['Sorties par bon de livraison, retours clients, préparation et colisage.'] },
-    reservations: { t: 'futur', lot: 6, ico: 'lock', d: 'Réservations pour les commandes', cdc: ['Réservation pour les commandes et disponibilités.'] },
-    inventaires: { t: 'futur', lot: 6, ico: 'scale', d: 'Inventaires', cdc: ['Inventaire et valorisation au coût de revient.'] },
+  stock_pf: { court: 'Stock PF', desc: 'Produits finis par référence, taille et couleur ; sortie automatique à la livraison (BL).', f: {
+    stock: { t: 'natif', ecran: 'etatPF', ico: 'box', libelle: 'État du stock', d: 'Par produit, taille, couleur' },
+    entrees: { t: 'natif', ecran: 'mouvementsPF', ico: 'in', libelle: 'Mouvements', d: 'Entrées, sorties, retours, BL' },
+    sorties: { t: 'futur', lot: 7, ico: 'out', libelle: 'Entrées depuis les OF', d: 'Automatiques au lot 7', cdc: ['Entrée automatique à la validation de l’assemblage de l’OF (lot 7). Les sorties par BL sont déjà automatiques depuis la 0.10.0.'] },
+    reservations: { t: 'futur', lot: 7, ico: 'lock', d: 'Réservations pour les commandes', cdc: ['Réservation pour les commandes et disponibilités (avec les OF, lot 7).'] },
+    inventaires: { t: 'natif', ecran: 'inventaires', stock: 'pf', ico: 'scale', d: 'Comptage, écarts justifiés' },
   } },
   parametres: { court: 'Paramètres', desc: 'Comptes, rôles, société, fiscalité, numérotation, journal et sauvegardes.', f: {
     utilisateurs: { t: 'natif', ecran: 'comptes', ico: 'user', d: 'Un compte par personne' },
@@ -130,7 +131,7 @@ const MODS = {
     retenues: { t: 'natif', ecran: 'retenues', ico: 'percent', libelle: 'Retenues à la source', d: 'Subies (clients) et opérées (fournisseurs)' },
     journaux: { t: 'natif', ecran: 'journaux', ico: 'list', libelle: 'Journaux et balance', d: 'Ventes, achats, banque, caisse' },
     plan: { t: 'natif', ecran: 'plan', ico: 'hash', d: 'Comptes utilisés pour les écritures' },
-    valorisation: { t: 'natif', ecran: 'valorisation', ico: 'scale', d: 'Coût moyen pondéré (CMUP)' },
+    valorisation: { t: 'natif', ecran: 'valorisation', ico: 'scale', d: 'Valeur des stocks (FIFO) et coûts d’achat' },
   } },
 };
 const ORDRE = ['infographie', 'commercial', 'compta_clients', 'compta_fournisseurs', 'compta_generale', 'paie', 'production', 'bom', 'stock_mp', 'stock_pf', 'parametres'];

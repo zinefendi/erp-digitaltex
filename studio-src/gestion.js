@@ -175,7 +175,12 @@ function clientsView() {
 
 /* ------------------------------------------------------------------ actions */
 const curOrder = () => db.orders.find((x) => x.id === selId);
-const put = async (col, rec) => { const r = await D.db.put(col, rec); db = await D.db.get(); return r; };
+const put = async (col, rec) => {
+  const r = await D.db.put(col, rec); db = await D.db.get();
+  // ERP 0.10.0 : BL livré sans stock suffisant → le BL passe, l'alerte est affichée (et inscrite au journal par le serveur)
+  if (r && Array.isArray(r.alertes_stock) && r.alertes_stock.length) alert('Attention : stock produits finis insuffisant.\n\n' + r.alertes_stock.map((a) => `${a.reference}${a.taille ? ' ' + a.taille : ''}${a.couleur ? ' ' + a.couleur : ''} : livré ${a.livre}, stock ${a.stock_avant} → ${a.stock_apres}`).join('\n') + '\n\nLe BL est enregistré ; le stock négatif est à régulariser (Stock PF).');
+  return r;
+};
 async function saveOrder(o, rerender = true) { o.total = orderTotal(o); await put('orders', o); if (rerender) render(true); }
 
 document.addEventListener('click', async (ev) => {

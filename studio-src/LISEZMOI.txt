@@ -12,3 +12,7 @@ ERP 0.9.1 :
   patch « nouveau client » 0.8.0 (type local / export, devise) reporté ici.
   npx esbuild src/gestion.js --bundle --minify --target=es2020 --loader:.css=text --outfile=…/erp/web/studio/gestion.js
 - docs-pdf.js : invoiceTotals avec FODEC (même calcul que api/lib/calculs.js).
+
+ERP 0.10.0 :
+- gestion.js : put() affiche l'alerte « stock produits finis insuffisant » renvoyée par le serveur après un BL (alertes_stock).
+  Les sources complètes (datepick.js…) ne sont pas dans ce dépôt : le bundle web/studio/gestion.js a été patché au même endroit (fonction vt).

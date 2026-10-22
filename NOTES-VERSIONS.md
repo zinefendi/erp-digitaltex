@@ -63,3 +63,16 @@ conversion des articles 0.7.0 ; clients Local / Export avec devise ; journaux et
 - Écrans « Nouvel avoir » et « Modifier l'avoir » : FODEC et timbre indiqués dans l'estimation (montant exact calculé par le serveur).
 - Les avoirs déjà émis ne sont pas recalculés (ils gardent leur montant d'origine).
 - Confirmé par l'utilisateur : la modification d'une facture émise non réglée reste autorisée telle quelle.
+
+## 0.10.0 (22/10/2026) — migration 010
+Stocks (modules 8 et 9, lot 6 du CDC). Décisions de l'utilisateur : valorisation FIFO (à confirmer par le comptable),
+lots et rouleaux de tissu dès maintenant, sortie automatique du stock PF à la validation d'un BL.
+- Stock MP : état (physique, réservé, disponible, seuil, alertes), réceptions numérotées RMP (un lot par ligne, une ligne par
+  rouleau pour le tissu : n° de lot, bain, métrage), sorties rouleau par rouleau ou FIFO, retours, transferts d'emplacement,
+  ajustements justifiés ; jamais de stock matières négatif ; annulation d'une réception tant que rien n'en est sorti.
+- Stock PF : par référence, taille et couleur ; entrées manuelles, retours clients, sorties, ajustements. Un BL créé, modifié
+  ou annulé met le stock à jour dans la même transaction ; stock insuffisant → le BL passe, alerte affichée et `stock_pf_negatif` au journal.
+- Inventaires MP et PF (INV), périodiques ou tournants : écart justifié obligatoire, passé en mouvement « Inventaire ».
+- Valeurs (coûts FIFO) visibles seulement avec le droit « coûts de revient » ; le magasin voit les quantités.
+- Compta générale › Valorisation : valeur des stocks MP + PF (FIFO). Exports CSV/Excel. Mouvements jamais supprimés ni modifiés.
+- Non fait dans ce lot : écritures comptables de variation de stock (comptes à valider), réservations (lot 7 avec les OF).
