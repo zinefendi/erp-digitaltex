@@ -3,3 +3,12 @@ Base : Uniform Studio 3D 3.3.0 (build/src). Changements ERP 0.6.0 dans app.js :
 - produits enregistrés avec « article » et « marks » (le serveur recalcule les prix) ;
 - mode « noPrice » (compte sans droit prix) : aucun montant affiché, avances masquées.
 Compilation : npx esbuild src/main.js --bundle --minify --target=es2020 --loader:.css=text --outfile=…/erp/web/studio/patron-studio.js
+
+ERP 0.9.1 :
+- docs-dt.js : impression au format DIGITAL-TEX (fond = formulaire WinDev, titre effacé : web/studio/fond-dt-*.jpg).
+  Utilisé par la Gestion (factures, BL) et, compilé à part, par les Ventes / la Comptabilité (devis, proformas, avoirs) :
+  npx esbuild src/docs-dt.js --bundle --minify --target=es2020 --format=iife --global-name=DocsDT --outfile=…/erp/web/docs-dt.js
+- gestion.js : modification / suppression des lignes de facture (tant qu'elle n'est pas réglée) et de BL (tant qu'il n'est pas facturé) ;
+  patch « nouveau client » 0.8.0 (type local / export, devise) reporté ici.
+  npx esbuild src/gestion.js --bundle --minify --target=es2020 --loader:.css=text --outfile=…/erp/web/studio/gestion.js
+- docs-pdf.js : invoiceTotals avec FODEC (même calcul que api/lib/calculs.js).

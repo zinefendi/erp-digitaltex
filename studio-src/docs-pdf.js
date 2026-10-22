@@ -51,22 +51,31 @@ export const cur = (inv) => (inv && (inv.currency === 'EUR' || inv.currency === 
 export const money = (v, c = 'DT') => (c === 'DT' ? dt(v) : dt(v, 2)) + ' ' + c;
 
 /* ---------- calculs de facture ---------- */
+// ERP 0.9.1 : même calcul que le serveur (api/lib/calculs.js · totauxFacture), FODEC compris
+// (taux figé sur la facture, sur le HT des produits hors prestations, ajouté avant la TVA).
 export function invoiceTotals(inv) {
-  const t = (+inv.tva || 0) / 100, ttcMode = inv.pricesTTC !== false;
-  let ht = 0, ttc = 0;
-  const lines = (inv.lines || []).map((l) => {
-    const q = +l.qty || 0, pu = +l.pu || 0, rem = Math.min(100, Math.max(0, +l.remise || 0)) / 100;
-    const puHT = ttcMode ? pu / (1 + t) : pu;
-    const totHT = r3(q * puHT * (1 - rem));
-    ht += totHT; return { ...l, puHT: r3(puHT), totHT };
+  const t = (+inv.tva || 0) / 100, f = (+inv.fodec || 0) / 100, ttcMode = inv.pricesTTC !== false;
+  const rem = (l) => Math.min(100, Math.max(0, +l.remise || 0)) / 100, presta = (l) => !!(l.service || l.artType === 'prestation');
+  const L = inv.lines || [];
+  const lines = L.map((l) => {
+    const q = +l.qty || 0, k = ttcMode ? (1 + t) * (presta(l) ? 1 : 1 + f) : 1, puHT = (+l.pu || 0) / k;
+    return { ...l, puHT: r3(puHT), totHT: r3(q * puHT * (1 - rem(l))), brutHT: r3(q * puHT) };
   });
-  ht = r3(ht);
-  const tva = r3(ht * t); ttc = r3(ht + tva);
-  if (ttcMode) { // les prix saisis sont TTC : le total TTC est la somme exacte des lignes, la TVA est déduite
-    const exact = r3((inv.lines || []).reduce((s, l) => s + (+l.qty || 0) * (+l.pu || 0) * (1 - Math.min(100, Math.max(0, +l.remise || 0)) / 100), 0));
-    return { lines, ht: r3(exact / (1 + t)), tva: r3(exact - r3(exact / (1 + t))), ttc: exact, timbre: r3(inv.timbre || 0), net: r3(exact + (+inv.timbre || 0)) };
+  const remise = r3(lines.reduce((s, l) => s + l.brutHT - l.totHT, 0));
+  let ht, fodec = 0, tva, ttc;
+  if (ttcMode) {
+    const ex = (arr) => arr.reduce((s, l) => s + (+l.qty || 0) * (+l.pu || 0) * (1 - rem(l)), 0);
+    ttc = r3(ex(L));
+    if (!f) ht = r3(ttc / (1 + t));
+    else { const htP = r3(ex(L.filter((l) => !presta(l))) / ((1 + t) * (1 + f))); ht = r3(htP + ex(L.filter(presta)) / (1 + t)); fodec = r3(htP * f); }
+    tva = r3(ttc - ht - fodec);
+  } else {
+    ht = r3(lines.reduce((s, l) => s + l.totHT, 0));
+    fodec = r3(lines.filter((l) => !presta(l)).reduce((s, l) => s + l.totHT, 0) * f);
+    tva = r3((ht + fodec) * t); ttc = r3(ht + fodec + tva);
   }
-  return { lines, ht, tva, ttc, timbre: r3(inv.timbre || 0), net: r3(ttc + (+inv.timbre || 0)) };
+  const timbre = r3(inv.timbre || 0);
+  return { lines, ht, remise, fodec, tva, ttc, timbre, net: r3(ttc + timbre) };
 }
 
 /* ---------- mise en page commune ---------- */
@@ -199,7 +208,7 @@ export async function buildInvoice(co, inv) {
   cols.push({ label: 'Total HT', w: 16, align: 'r', bold: true });
   d.table(cols, X.lines.map((l) => [l.designation, String(+l.qty || 0), n(l.puHT), ...(hasRem ? [l.remise ? `${+l.remise} %` : ''] : []), n(l.totHT)]));
   const paid = r3((+inv.advance || 0) + (inv.payments || []).reduce((s, p) => s + (+p.amount || 0), 0));
-  const rows = [['Total HT', m(X.ht)], [`TVA ${+inv.tva || 0} %${exp && !+inv.tva ? ' (exportation)' : ''}`, m(X.tva)], ['Total TTC', m(X.ttc)]];
+  const rows = [['Total HT', m(X.ht)], ...(X.fodec ? [[`FODEC ${+inv.fodec} %`, m(X.fodec)]] : []), [`TVA ${+inv.tva || 0} %${exp && !+inv.tva ? ' (exportation)' : ''}`, m(X.tva)], ['Total TTC', m(X.ttc)]];
   if (X.timbre) rows.push(['Droit de timbre', m(X.timbre)]);
   rows.push(['NET À PAYER', m(X.net), true]);
   if (+inv.advance) rows.push(['Avance(s) déduite(s)', '- ' + m(inv.advance)]);

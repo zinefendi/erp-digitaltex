@@ -51,7 +51,8 @@ test('devis : numéro serveur, totaux recalculés (TVA en vigueur, TTC), statuts
   assert.equal(r.statusCode, 201, r.body);
   const d = r.json();
   assert.equal(d.numero, `DEV-${AN}-0001`); assert.equal(d.statut, 'emis'); assert.equal(d.tva, 19); assert.equal(d.prix_ttc, true);
-  assert.equal(d.ttc, 250); assert.equal(d.ht, 210.084); assert.equal(d.montant_tva, 39.916); assert.equal(d.devise, 'DT');
+  // 0.9.1 : FODEC 1 % sur les produits (pas sur le transport) : HT = 200 / (1,19 × 1,01) + 50 / 1,19
+  assert.equal(d.ttc, 250); assert.equal(d.fodec, 1); assert.equal(d.ht, 208.42); assert.equal(d.montant_fodec, 1.664); assert.equal(d.montant_tva, 39.916); assert.equal(d.devise, 'DT');
   assert.ok(d.validite > d.date, 'validité 30 jours par défaut');
   // passage envoyé → accepté ; refus sans motif refusé
   r = await appel('POST', `/api/ventes/devis/${d.id}/statut`, { jeton: J.commercial, body: { statut: 'envoye', version: d.version } });
@@ -220,3 +221,132 @@ test('commande Gestion : vente à perte contrôlée aussi en devise (taux de cha
 });
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
+
+// ============================================================ 0.9.1
+const gestionDe = async (jeton) => (await appel('GET', '/api/commercial/gestion', { jeton })).json();
+const putG = (col, body, jeton = J.compta) => appel('PUT', '/api/commercial/' + col, { jeton, body });
+
+test('0.9.1 FODEC : facture locale au taux en vigueur (figé), export sans FODEC, calcul du modèle DIGITAL-TEX', async () => {
+  const C = require('../lib/calculs');
+  // facture du modèle (HT) : 5 × 28 + 7 × 26 = 322 ; FODEC 1 % = 3,220 ; TVA 19 % sur 325,22 = 61,792 ; TTC 387,012 ; + timbre = 388,012
+  const t = C.totauxFacture({ tva: 19, fodec: 1, timbre: 1, pricesTTC: false, lines: [{ qty: 5, pu: 28 }, { qty: 7, pu: 26 }] });
+  assert.deepEqual([t.ht, t.fodec, t.tva, t.ttc, t.net], [322, 3.22, 61.792, 387.012, 388.012]);
+  const n = (await appel('POST', '/api/commercial/numero', { jeton: J.compta, body: { kind: 'invoice', date: `${AN}-03-01` } })).json().numero;
+  let r = await putG('invoices', { number: n, date: `${AN}-03-01`, client: { id: 'cl-local', name: 'Hôtel Sousse' }, tva: 19, timbre: 1, pricesTTC: false, fodec: 7, lines: [{ designation: 'T-shirt', qty: 5, pu: 28 }], payments: [], status: 'validee' });
+  assert.equal(r.statusCode, 200, r.body); assert.equal(r.json().fodec, 1, 'taux fixé par le serveur, pas par le poste');
+  const id = r.json().id;
+  r = await putG('invoices', { ...r.json(), fodec: 0 });
+  assert.equal(r.json().fodec, 1, 'le taux FODEC d’une facture émise ne change pas');
+  const n2 = (await appel('POST', '/api/commercial/numero', { jeton: J.compta, body: { kind: 'invoice' } })).json().numero;
+  r = await putG('invoices', { number: n2, date: `${AN}-03-02`, client: { id: 'cl-export', name: 'Hotel Lyon SARL' }, currency: 'EUR', export: true, tva: 0, timbre: 0, pricesTTC: false, lines: [{ designation: 'Polo', qty: 10, pu: 6 }], payments: [], status: 'validee' });
+  assert.equal(r.json().fodec, 0, 'export : pas de FODEC');
+  // écriture équilibrée avec une ligne FODEC (compte du plan, à confirmer par le comptable)
+  const e = (await appel('GET', `/api/compta/ecritures?du=${AN}-03-01&au=${AN}-03-01`, { jeton: J.compta })).json();
+  const ecr = e.ecritures.find((x) => x.piece === n);
+  assert.ok(ecr.lignes.some((l) => l.compte === '4471' && l.credit === 1.4), JSON.stringify(ecr.lignes));
+  assert.ok(!e.desequilibres.includes(n));
+  await pool.query(`update commercial.documents set donnees = jsonb_set(donnees, '{status}', '"annulee"') where id = $1`, [id]);
+});
+
+test('0.9.1 facture : lignes modifiables / supprimables tant qu’elle n’est pas réglée, plafond commande, audit', async () => {
+  const no = (await appel('POST', '/api/commercial/numero', { jeton: J.commercial, body: { kind: 'order' } })).json().numero;
+  const o = (await putG('orders', { number: no, status: 'en_cours', client: { id: 'cl-local', name: 'Hôtel Sousse' }, lines: [
+    { id: 'a1', designation: 'Polo', size: 'M', qty: 10, pu: 23.8 }, { id: 'a2', designation: 'Polo', size: 'L', qty: 4, pu: 23.8 }, { id: 'a3', designation: 'Transport', qty: 1, pu: 59.5, service: true }] }, J.commercial)).json();
+  const nf = (await appel('POST', '/api/commercial/numero', { jeton: J.compta, body: { kind: 'invoice' } })).json().numero;
+  const base = { number: nf, date: `${AN}-04-01`, orderId: o.id, orderNumber: o.number, client: { id: 'cl-local', name: 'Hôtel Sousse' }, tva: 19, timbre: 1, pricesTTC: true, advance: 0, payments: [], status: 'validee', blIds: [] };
+  let f = (await putG('invoices', { ...base, lines: [{ designation: 'Polo (M×6, L×4)', qty: 10, pu: 23.8, remise: 0, lineIds: ['a1', 'a2'], qtyBy: { a1: 6, a2: 4 } }, { designation: 'Transport', qty: 1, pu: 59.5, lineIds: ['a3'], qtyBy: { a3: 1 }, service: true }] })).json();
+  // modifier la quantité (8 M) : accepté, plafond = 10 M commandés
+  let r = await putG('invoices', { ...f, lines: [{ ...f.lines[0], qty: 12, qtyBy: { a1: 8, a2: 4 } }, f.lines[1]] });
+  assert.equal(r.statusCode, 200, r.body); f = r.json();
+  r = await putG('invoices', { ...f, lines: [{ ...f.lines[0], qty: 15, qtyBy: { a1: 11, a2: 4 } }, f.lines[1]] });
+  assert.equal(r.json().erreur, 'trop_facture');
+  r = await putG('invoices', { ...f, lines: [{ ...f.lines[0], qty: 13, qtyBy: { a1: 8, a2: 4 } }, f.lines[1]] });
+  assert.equal(r.json().erreur, 'ligne_invalide', 'quantité = somme des tailles');
+  // supprimer la ligne transport + changer prix et remise
+  r = await putG('invoices', { ...f, lines: [{ ...f.lines[0], pu: 22, remise: 5, designation: 'Polo brodé' }] });
+  assert.equal(r.statusCode, 200, r.body); f = r.json();
+  assert.equal(f.lines.length, 1); assert.equal(f.number, nf, 'le numéro ne change pas');
+  r = await putG('invoices', { ...f, lines: [] });
+  assert.equal(r.json().erreur, 'lignes_absentes');
+  r = await putG('invoices', { ...f, tva: 7 });
+  assert.equal(r.json().erreur, 'champ_fige');
+  const a = (await pool.query(`select avant, apres from noyau.audit where action = 'facture_lignes_modifiees' and entite_id = $1 order by id desc limit 1`, [nf])).rows[0];
+  assert.ok(a && a.avant.lignes.length === 2 && a.apres.lignes.length === 1, 'audit avant / après');
+  // le commercial (droit prix mais pas « modifier facture » ?) — l'infographe sans prix : refusé
+  assert.equal((await putG('invoices', f, J.infographie)).statusCode, 403);
+  // après un règlement : figée
+  f = (await putG('invoices', { ...f, payments: [{ id: 'p', date: `${AN}-04-02`, amount: 10, mode: 'Espèces' }] })).json();
+  r = await putG('invoices', { ...f, lines: [{ ...f.lines[0], pu: 20 }] });
+  assert.equal(r.json().erreur, 'facture_reglee');
+  // règlement retiré puis avoir : figée aussi
+  f = (await putG('invoices', { ...f, payments: [] })).json();
+  const av = (await appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: f.id, motif: 'Retour', lignes: [{ index: 0, qte: 1 }] } })).json();
+  f = (await gestionDe(J.compta)).invoices.find((x) => x.id === f.id);
+  r = await putG('invoices', { ...f, lines: [{ ...f.lines[0], pu: 20 }] });
+  assert.equal(r.json().erreur, 'facture_reglee', 'l’imputation de l’avoir compte comme un règlement');
+  assert.ok(av.numero);
+});
+
+test('0.9.1 BL : quantités modifiables et lignes supprimables tant qu’il n’est pas facturé', async () => {
+  const no = (await appel('POST', '/api/commercial/numero', { jeton: J.commercial, body: { kind: 'order' } })).json().numero;
+  const o = (await putG('orders', { number: no, status: 'en_cours', client: { id: 'cl-local', name: 'Hôtel Sousse' }, lines: [{ id: 'b1', designation: 'Polo', size: 'M', qty: 10, pu: 20 }, { id: 'b2', designation: 'Polo', size: 'L', qty: 5, pu: 20 }] }, J.commercial)).json();
+  const mk = async (lines) => (await putG('bls', { number: (await appel('POST', '/api/commercial/numero', { jeton: J.commercial, body: { kind: 'bl' } })).json().numero, date: `${AN}-05-01`, orderId: o.id, orderNumber: o.number, client: o.client, lines, status: 'livre' }, J.commercial)).json();
+  const bl1 = await mk([{ lineId: 'b1', designation: 'Polo', size: 'M', qty: 6 }, { lineId: 'b2', designation: 'Polo', size: 'L', qty: 5 }]);
+  await mk([{ lineId: 'b1', designation: 'Polo', size: 'M', qty: 3 }]);
+  let r = await putG('bls', { ...bl1, lines: [{ ...bl1.lines[0], qty: 8 }, bl1.lines[1]] }, J.commercial);
+  assert.equal(r.json().erreur, 'trop_livre', '10 commandés − 3 livrés par l’autre BL = 7 au plus');
+  r = await putG('bls', { ...bl1, lines: [{ ...bl1.lines[0], qty: 7 }] }, J.commercial);
+  assert.equal(r.statusCode, 200, r.body); assert.equal(r.json().lines.length, 1);
+  r = await putG('bls', { ...bl1, lines: [] }, J.commercial);
+  assert.equal(r.json().erreur, 'lignes_absentes');
+  r = await putG('bls', { ...bl1, lines: [{ lineId: 'zz', designation: 'X', qty: 1 }] }, J.commercial);
+  assert.equal(r.json().erreur, 'ligne_invalide');
+  // facturé → figé, et ne s'annule plus
+  const nf = (await appel('POST', '/api/commercial/numero', { jeton: J.compta, body: { kind: 'invoice' } })).json().numero;
+  await putG('invoices', { number: nf, date: `${AN}-05-02`, orderId: o.id, client: o.client, blIds: [bl1.id], tva: 19, timbre: 1, pricesTTC: true, lines: [{ designation: 'Polo', qty: 7, pu: 20, lineIds: ['b1'], qtyBy: { b1: 7 } }], payments: [], status: 'validee' });
+  const b = (await gestionDe(J.commercial)).bls.find((x) => x.id === bl1.id);
+  r = await putG('bls', { ...b, lines: [{ ...b.lines[0], qty: 6 }] }, J.commercial);
+  assert.equal(r.json().erreur, 'bl_facture');
+  r = await putG('bls', { ...b, status: 'annule' }, J.commercial);
+  assert.equal(r.json().erreur, 'bl_facture');
+});
+
+test('0.9.1 avoir : modification des quantités et du prix, suppression de ligne, imputation refaite, verrou et version', async () => {
+  const f = { id: 'fac-av2', number: `FAC-${AN}-0950`, date: `${AN}-06-10`, client: { id: 'cl-local', name: 'Hôtel Sousse' }, tva: 19, timbre: 1, pricesTTC: true,
+    lines: [{ designation: 'Polo homme', qty: 10, pu: 23.8 }, { designation: 'Casquette', qty: 5, pu: 11.9 }], payments: [], status: 'validee' };
+  await pool.query(`insert into commercial.documents (collection, id, donnees) values ('invoices', $1, $2)`, [f.id, f]);
+  let a = (await appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: f.id, motif: 'Retour', lignes: [{ index: 0, qte: 2 }, { index: 1, qte: 1 }] } })).json();
+  assert.equal(a.net, r3(2 * 23.8 + 11.9));
+  // 3 polos, casquette supprimée
+  let r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, lignes: [{ index: 0, qte: 3 }] } });
+  assert.equal(r.statusCode, 200, r.body); a = r.json();
+  assert.equal(a.lignes.length, 1); assert.equal(a.net, 71.4);
+  let fac = (await gestionDe(J.compta)).invoices.find((x) => x.id === f.id);
+  assert.equal(fac.payments.length, 1); assert.equal(fac.payments[0].amount, 71.4, 'imputation refaite');
+  // erreur de prix : avoir de 2 DT par polo sur 10 polos ; prix > facturé refusé ; quantité > facturée refusée
+  r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, lignes: [{ index: 0, qte: 10, pu: 30 }] } });
+  assert.equal(r.json().erreur, 'prix_trop_eleve');
+  r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, lignes: [{ index: 0, qte: 11 }] } });
+  assert.equal(r.json().erreur, 'trop_credite');
+  r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, motif: 'Erreur de prix', lignes: [{ index: 0, qte: 10, pu: 2 }] } });
+  assert.equal(r.statusCode, 200, r.body); a = r.json(); assert.equal(a.net, 20); assert.equal(a.motif, 'Erreur de prix');
+  r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version - 1, lignes: [{ index: 0, qte: 1 }] } });
+  assert.equal(r.json().erreur, 'conflit_version');
+  r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, lignes: [{ index: 0, qte: 0 }] } });
+  assert.equal(r.json().erreur, 'lignes_absentes');
+  // verrou tenu par un autre compte
+  await appel('POST', `/api/verrous/avoir/${a.id}`, { jeton: J.admin });
+  r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, lignes: [{ index: 0, qte: 1 }] } });
+  assert.equal(r.statusCode, 423);
+  await appel('DELETE', `/api/verrous/avoir/${a.id}`, { jeton: J.admin });
+  // l'écran « modifier » voit ses propres quantités comme créditables
+  const cr = (await appel('GET', `/api/ventes/factures/${f.id}/creditable?sauf=${a.id}`, { jeton: J.compta })).json();
+  assert.equal(cr.lignes[0].creditable, 10); assert.equal(cr.reste, r3(238 + 59.5 + 1));
+  // sans droit prix : refusé ; annulé : figé
+  assert.equal((await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.infographie, body: { version: a.version, lignes: [{ index: 0, qte: 1 }] } })).statusCode, 403);
+  await appel('POST', `/api/ventes/avoirs/${a.id}/statut`, { jeton: J.compta, body: { statut: 'annule', motif: 'test', version: a.version } });
+  r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version + 1, lignes: [{ index: 0, qte: 1 }] } });
+  assert.equal(r.json().erreur, 'non_modifiable');
+  const au = (await pool.query(`select 1 from noyau.audit where action = 'avoir_modifie' and entite_id = $1`, [a.numero])).rowCount;
+  assert.ok(au >= 2);
+});

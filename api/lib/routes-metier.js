@@ -10,6 +10,7 @@ const S = require('./securite');
 const D = require('./droits');
 const P = require('./prix-studio');
 const V = require('./ventes');
+const C = require('./calculs');
 
 const GLB_DIR = process.env.ERP_GLB_DIR || '/data/glb';
 const FACTORY = process.env.ERP_CATALOGUE_USINE || '/data/catalogue-usine.json';
@@ -57,6 +58,7 @@ async function avecParametres(db, donnees) {
   c.gestion = { ...(c.gestion || {}) };
   if (fv.tva_normale !== undefined) c.gestion.tva = fv.tva_normale;
   if (fv.timbre_fiscal !== undefined) c.gestion.timbre = fv.timbre_fiscal;
+  c.gestion.fodec = fv.fodec || 0; // 0.9.1 : FODEC des ventes locales (Paramètres › Fiscalité)
   for (const [k, t] of [['orderPrefix', 'commande'], ['blPrefix', 'bl'], ['invoicePrefix', 'facture'], ['receiptPrefix', 'recu']]) if (n[t]) c.gestion[k] = n[t];
   return c;
 }
@@ -78,6 +80,85 @@ async function lireGestion(eff) {
   // sans le droit « prix » : lignes, avances, règlements, totaux retirés ; factures entièrement masquées
   if (!D.voit(eff, 'prix')) { out.invoices = []; for (const k of ['orders', 'bls']) out[k] = D.masquer(eff, out[k]); }
   return out;
+}
+
+// ------------------------------------------------------------------ 0.9.1 : modification des lignes (facture, BL)
+// Une facture émise reste modifiable tant qu'elle n'est pas réglée (décision de l'utilisateur du 22/10/2026) :
+// ni règlement, ni avoir, ni encaissement comptable, ni référence El Fatoora (TTN). Le numéro ne change pas,
+// chaque modification est tracée dans l'audit (lignes avant / après). Sinon : avoir.
+const r3 = (v) => Math.round((+v || 0) * 1000) / 1000;
+const signLignes = (L) => JSON.stringify((L || []).map((l) => [String(l.designation || ''), r3(l.qty), r3(l.pu), +l.remise || 0, l.article || '', !!l.service, l.lineIds || [], l.qtyBy || {}]));
+const signBL = (L) => JSON.stringify((L || []).map((l) => [l.lineId, +l.qty || 0]));
+const resumeLignes = (L) => (L || []).map((l) => ({ designation: l.designation, qte: +l.qty || 0, pu: l.pu, remise: +l.remise || 0 }));
+const leveM = (code, message) => Object.assign(new Error(message), { statusCode: 400, code });
+
+async function autresDocs(c, col, orderId, sauf) {
+  return (await c.query(`select donnees from commercial.documents where collection = $1 and donnees->>'orderId' = $2 and id <> $3`, [col, orderId, sauf])).rows.map((x) => x.donnees);
+}
+async function controlerLignesFacture(c, rec, avant) {
+  if (avant.ttnRef) throw leveM('facture_ttn', `La facture ${avant.number} a une référence El Fatoora (TTN) : elle ne se modifie plus. Établissez un avoir.`);
+  if ((rec.payments || []).length || (avant.payments || []).length) throw leveM('facture_reglee', `La facture ${avant.number} a déjà un règlement : ses lignes ne se modifient plus. Établissez un avoir (Commercial › Avoirs).`);
+  const av = (await c.query(`select string_agg(numero, ', ') n from ventes.documents where type = 'avoir' and facture_id = $1 and statut = 'emis'`, [avant.id])).rows[0].n;
+  if (av) throw leveM('facture_avec_avoir', `La facture ${avant.number} a un avoir (${av}) : ses lignes ne se modifient plus.`);
+  for (const k of ['date', 'currency', 'export', 'pricesTTC']) if (JSON.stringify(rec[k] ?? null) !== JSON.stringify(avant[k] ?? null)) throw leveM('champ_fige', 'La date, la devise et le mode de prix d’une facture émise ne changent pas.');
+  for (const k of ['tva', 'timbre', 'fodec']) if (r3(rec[k]) !== r3(avant[k])) throw leveM('champ_fige', 'Les taux de TVA, FODEC et le timbre d’une facture émise ne changent pas.');
+  if ((rec.client?.id || '') !== (avant.client?.id || '')) throw leveM('champ_fige', 'Le client d’une facture émise ne change pas.');
+  const L = rec.lines;
+  if (!Array.isArray(L) || !L.length) throw leveM('lignes_absentes', 'Une facture garde au moins une ligne : pour tout retirer, annulez-la (ou établissez un avoir).');
+  L.forEach((l, i) => {
+    if (!String(l.designation || '').trim()) throw leveM('ligne_invalide', `Ligne ${i + 1} : la désignation est obligatoire.`);
+    if (!(+l.qty > 0) || +l.qty > 1e7) throw leveM('ligne_invalide', `Ligne ${i + 1} : la quantité doit être supérieure à 0.`);
+    if (!(+l.pu >= 0) || +l.pu > 1e8) throw leveM('ligne_invalide', `Ligne ${i + 1} : le prix unitaire doit être positif.`);
+    if (!(+(l.remise || 0) >= 0 && +(l.remise || 0) <= 100)) throw leveM('ligne_invalide', `Ligne ${i + 1} : la remise est comprise entre 0 et 100 %.`);
+    if (l.lineIds) {
+      const ids = l.lineIds, qb = l.qtyBy || {};
+      if (Object.keys(qb).some((k) => !ids.includes(k))) throw leveM('ligne_invalide', `Ligne ${i + 1} : quantités par taille incohérentes.`);
+      if (r3(ids.reduce((s, id) => s + (+qb[id] || 0), 0)) !== r3(l.qty)) throw leveM('ligne_invalide', `Ligne ${i + 1} : la quantité doit être la somme des quantités par taille.`);
+    }
+  });
+  // une ligne issue de la commande ne dépasse jamais ce qui reste à facturer sur la commande
+  if (avant.orderId) {
+    const o = (await c.query(`select donnees from commercial.documents where collection = 'orders' and id = $1`, [avant.orderId])).rows[0]?.donnees;
+    if (o) {
+      const deja = {};
+      for (const f of await autresDocs(c, 'invoices', o.id, avant.id)) if (f.status !== 'annulee') for (const l of f.lines || []) for (const id of l.lineIds || []) deja[id] = (deja[id] || 0) + (+(l.qtyBy || {})[id] || 0);
+      const ici = {};
+      for (const l of L) for (const id of l.lineIds || []) ici[id] = (ici[id] || 0) + (+(l.qtyBy || {})[id] || 0);
+      const avantQ = {};
+      for (const l of avant.lines || []) for (const id of l.lineIds || []) avantQ[id] = (avantQ[id] || 0) + (+(l.qtyBy || {})[id] || 0);
+      for (const [id, q] of Object.entries(ici)) {
+        const ol = (o.lines || []).find((x) => x.id === id);
+        if (!ol) { // ligne retirée de la commande après facturation : on peut baisser, pas augmenter
+          if (q > (avantQ[id] || 0) + 0.0005) throw leveM('trop_facture', 'Cette ligne n’existe plus dans la commande : sa quantité ne peut que baisser.');
+          continue;
+        }
+        const max = r3((+ol.qty || 0) - (deja[id] || 0));
+        if (q > max + 0.0005) throw leveM('trop_facture', `« ${ol.designation}${ol.size ? ' ' + ol.size : ''} » : ${max} au plus à facturer (commande ${o.number} : ${+ol.qty || 0}, déjà facturé ailleurs : ${deja[id] || 0}).`);
+      }
+    }
+  }
+  if (r3(C.totauxFacture(rec).net) < r3(rec.advance) - 0.0005) throw leveM('avance_superieure', 'Le net de la facture deviendrait inférieur à l’avance déjà déduite.');
+}
+async function controlerLignesBL(c, rec, avant) {
+  if (avant.status === 'annule') throw leveM('bl_annule', 'Un BL annulé ne se modifie plus.');
+  const fac = (await c.query(`select donnees->>'number' n from commercial.documents where collection = 'invoices' and donnees->>'status' <> 'annulee' and donnees->'blIds' ? $1 limit 1`, [avant.id])).rows[0];
+  if (fac) throw leveM('bl_facture', `Ce BL est facturé (${fac.n}) : il ne se modifie plus. Corrigez par un avoir sur la facture, ou annulez d’abord la facture.`);
+  for (const k of ['orderId', 'number', 'date']) if ((rec[k] ?? '') !== (avant[k] ?? '')) throw leveM('champ_fige', 'Le numéro, la date et la commande d’un BL ne changent pas.');
+  const L = rec.lines;
+  if (!Array.isArray(L) || !L.length) throw leveM('lignes_absentes', 'Un BL garde au moins une ligne : pour tout retirer, annulez-le.');
+  const o = (await c.query(`select donnees from commercial.documents where collection = 'orders' and id = $1`, [avant.orderId])).rows[0]?.donnees;
+  if (!o) throw leveM('commande_introuvable', 'Commande du BL introuvable.');
+  const deja = {};
+  for (const b of await autresDocs(c, 'bls', o.id, avant.id)) if (b.status !== 'annule') for (const l of b.lines || []) deja[l.lineId] = (deja[l.lineId] || 0) + (+l.qty || 0);
+  const vus = new Set();
+  for (const l of L) {
+    const ol = (o.lines || []).find((x) => x.id === l.lineId);
+    if (!ol || vus.has(l.lineId)) throw leveM('ligne_invalide', 'Une ligne du BL ne correspond pas à la commande.');
+    vus.add(l.lineId);
+    if (!(Number.isInteger(+l.qty) && +l.qty > 0)) throw leveM('ligne_invalide', `« ${ol.designation} » : la quantité livrée est un nombre entier supérieur à 0 (pour retirer la ligne, supprimez-la).`);
+    const max = (+ol.qty || 0) - (deja[l.lineId] || 0);
+    if (+l.qty > max) throw leveM('trop_livre', `« ${ol.designation}${ol.size ? ' ' + ol.size : ''} » : ${max} au plus (commande ${o.number} : ${+ol.qty || 0}, déjà livré par d’autres BL : ${deja[l.lineId] || 0}).`);
+  }
 }
 
 // ------------------------------------------------------------------ registres
@@ -152,7 +233,8 @@ module.exports = async function routesMetier(app) {
     schema: { params: { type: 'object', properties: { col: { type: 'string', enum: COLS } } }, body: { type: 'object' } },
   }, async (req, reply) => {
     const col = req.params.col;
-    let rec = req.body;
+    const { confirmer_perte: confirmerPerte, ...corps } = req.body; // option de la requête, jamais enregistrée dans le document
+    let rec = corps;
     // Sans le droit « prix » : clients autorisés ; commandes avec prix fixés par le serveur (lib/prix-studio.js) ;
     // BL et factures toujours refusés.
     const sansPrix = !D.voit(req.droits, 'prix');
@@ -160,6 +242,8 @@ module.exports = async function routesMetier(app) {
     if (rec.id && !/^[A-Za-z0-9_-]{1,40}$/.test(rec.id)) return erreur(reply, 400, 'id_invalide', 'Identifiant invalide.');
     return transaction(async (c) => {
       const avant = rec.id ? (await c.query('select donnees from commercial.documents where collection = $1 and id = $2 for update', [col, rec.id])).rows[0]?.donnees : null;
+      let lignesModifiees = null;
+      if (avant && col === 'invoices') rec = { ...rec, fodec: avant.fodec || 0 }; // 0.9.1 : le taux FODEC d'une facture émise ne change jamais
       const action = avant ? 'modifier' : 'creer';
       if (!D.peut(req.droits, DROIT_COL[col], action)) return erreur(reply, 403, 'interdit', `Vos droits ne permettent pas de ${action === 'creer' ? 'créer' : 'modifier'} ce document.`);
       if (sansPrix && col === 'orders') {
@@ -199,17 +283,38 @@ module.exports = async function routesMetier(app) {
         if (rec.status === 'annulee' && deCompta.some((p) => p.enc)) return erreur(reply, 400, 'facture_lettree', 'Cette facture a des encaissements enregistrés en comptabilité : annulez-les d’abord (Comptabilité clients › Encaissements).');
         if (rec.status === 'annulee' && !D.peut(req.droits, 'commercial.factures', 'annuler')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas d’annuler une facture.');
         if (avant.number && rec.number !== avant.number) return erreur(reply, 400, 'numero_fige', 'Le numéro d’une facture ne change pas.');
+        // 0.9.1 : lignes modifiées (ou supprimées) → règles « tant qu'elle n'est pas réglée »
+        if (rec.status !== 'annulee' && (signLignes(rec.lines) !== signLignes(avant.lines) || r3(rec.advance) !== r3(avant.advance) || ['tva', 'timbre', 'fodec'].some((k) => r3(rec[k]) !== r3(avant[k])) || ['date', 'currency', 'pricesTTC'].some((k) => JSON.stringify(rec[k] ?? null) !== JSON.stringify(avant[k] ?? null)))) {
+          if (r3(rec.advance) > r3(avant.advance) + 0.0005) return erreur(reply, 400, 'avance_figee', 'L’avance déduite d’une facture émise ne peut pas augmenter.');
+          try { await controlerLignesFacture(c, rec, avant); } catch (e) { if (e.statusCode) return erreur(reply, e.statusCode, e.code, e.message); throw e; }
+          lignesModifiees = { avant: { lignes: resumeLignes(avant.lines), net: C.totauxFacture(avant).net }, apres: { lignes: resumeLignes(rec.lines), net: C.totauxFacture(rec).net } };
+        }
+      }
+      if (avant && col === 'bls' && rec.status !== 'annule' && (signBL(rec.lines) !== signBL(avant.lines) || ['orderId', 'number', 'date'].some((k) => (rec[k] ?? '') !== (avant[k] ?? '')))) {
+        try { await controlerLignesBL(c, rec, avant); } catch (e) { if (e.statusCode) return erreur(reply, e.statusCode, e.code, e.message); throw e; }
+        lignesModifiees = { avant: { lignes: (avant.lines || []).map((l) => ({ designation: l.designation, taille: l.size || '', qte: l.qty })) }, apres: { lignes: (rec.lines || []).map((l) => ({ designation: l.designation, taille: l.size || '', qte: l.qty })) } };
+      }
+      if (avant && col === 'bls' && rec.status === 'annule' && avant.status !== 'annule') {
+        const fac = (await c.query(`select donnees->>'number' n from commercial.documents where collection = 'invoices' and donnees->>'status' <> 'annulee' and donnees->'blIds' ? $1 limit 1`, [avant.id])).rows[0];
+        if (fac) return erreur(reply, 400, 'bl_facture', `Ce BL est facturé (${fac.n}) : annulez d’abord la facture.`);
       }
       if (avant && col === 'orders' && rec.status === 'annulee' && avant.status !== 'annulee' && !D.peut(req.droits, 'commercial.commandes', 'annuler')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas d’annuler une commande.');
       if (col === 'invoices' && !avant && !rec.number) return erreur(reply, 400, 'numero_absent', 'Une facture doit avoir un numéro officiel.');
       if (col === 'invoices' && !avant) rec = { ...rec, payments: (rec.payments || []).filter((p) => p && !p.enc && !p.avoir) };
+      // 0.9.1 : FODEC fixé par le serveur à la création (taux en vigueur à la date de la facture) ; ventes locales en dinars seulement
+      if (col === 'invoices' && !avant) {
+        const local = !rec.export && !['EUR', 'USD'].includes(rec.currency);
+        const f = local ? Number((await c.query("select coalesce(parametres.taux_a('fodec', $1::date), 0) v", [/^\d{4}-\d{2}-\d{2}$/.test(rec.date || '') ? rec.date : new Date().toISOString().slice(0, 10)])).rows[0].v) : 0;
+        rec = { ...rec, fodec: f };
+      }
       // 0.8.0 / 0.9.0 : contrôle vente à perte sur les lignes de produits finis (prix < PRI → confirmation obligatoire,
       // tracée dans l'audit). En devise : prix × taux de change mémorisé (sans taux, pas de comparaison possible).
       if (!sansPrix && (col === 'orders' || col === 'invoices') && Array.isArray(rec.lines)) {
         const dev = ['EUR', 'USD'].includes(rec.currency) ? rec.currency : 'DT';
         const tvaN = col === 'invoices' ? (+rec.tva || 0) : (dev === 'DT' ? Number((await c.query("select coalesce(parametres.taux_a('tva_normale', current_date), 19) v")).rows[0].v) : 0);
-        const enPerte = await V.lignesEnPerte(c, rec.lines, { ttc: rec.pricesTTC !== false && dev === 'DT', tva: tvaN, devise: dev, taux: +rec.taux_change || 0 }, (l) => l.article);
-        if (enPerte.length && !req.body.confirmer_perte) {
+        const fodN = col === 'invoices' ? (+rec.fodec || 0) : (dev === 'DT' ? Number((await c.query("select coalesce(parametres.taux_a('fodec', current_date), 0) v")).rows[0].v) : 0);
+        const enPerte = await V.lignesEnPerte(c, rec.lines.map((l) => ({ ...l, service: !!(l.service || l.artType === 'prestation') })), { ttc: rec.pricesTTC !== false && dev === 'DT', tva: tvaN, fodec: fodN, devise: dev, taux: +rec.taux_change || 0 }, (l) => l.article);
+        if (enPerte.length && !confirmerPerte) {
           return erreur(reply, 409, 'vente_a_perte', `Attention : vente à perte sur ${[...new Set(enPerte.map((p) => p.ref))].join(', ')} (prix de vente inférieur au prix de revient). Cochez la confirmation pour enregistrer.`);
         }
         if (enPerte.length) await S.auditer(c, req, 'vente_a_perte_confirmee', { entite: col === 'orders' ? 'commande' : 'facture', entiteId: rec.id || '', details: { lignes: enPerte } });
@@ -221,6 +326,7 @@ module.exports = async function routesMetier(app) {
       const resume = (x) => x && { numero: x.number || x.name || null, statut: x.status || null, client: x.client?.name || null, lignes: (x.lines || []).length };
       const act = { clients: 'client', orders: 'commande', bls: 'bl', invoices: 'facture' }[col];
       await S.auditer(c, req, avant ? `${act}_modifie` : `${act}_cree`, { entite: act, entiteId: rec.id, avant: resume(avant), apres: resume(rec), details: sansPrix && col === 'orders' ? { prix: 'calculés par le serveur' } : undefined });
+      if (lignesModifiees) await S.auditer(c, req, `${act}_lignes_modifiees`, { entite: act, entiteId: rec.number || rec.id, avant: lignesModifiees.avant, apres: lignesModifiees.apres });
       return sansPrix ? D.masquer(req.droits, rec) : rec;
     });
   });

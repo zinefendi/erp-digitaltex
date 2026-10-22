@@ -185,7 +185,7 @@ test('comptabilité générale : écritures équilibrées, balance, exports CSV 
   assert.equal(x.statusCode, 200); assert.match(x.headers['content-type'], /spreadsheetml/); assert.equal(x.rawPayload.slice(0, 2).toString(), 'PK');
   const c = await appel('GET', '/api/compta/export/ventes?du=2026-01-01&au=2026-12-31&format=csv', { jeton: J.compta });
   assert.match(c.headers['content-type'], /text\/csv/); assert.ok(c.body.startsWith('\ufeffDate;Facture;'));
-  assert.match(c.body, /FAC-2026-0002;Hôtel Test;1234567A\/A\/M\/000;DT;1000;19;190;1;1191;/);
+  assert.match(c.body, /FAC-2026-0002;Hôtel Test;1234567A\/A\/M\/000;DT;1000;0;19;190;1;1191;/);
   for (const u of ['achats', 'retenues', 'balance-clients', 'balance-fournisseurs']) {
     const y = await appel('GET', `/api/compta/export/${u}?format=xlsx`, { jeton: J.compta });
     assert.equal(y.statusCode, 200, u); assert.equal(y.rawPayload.slice(0, 2).toString(), 'PK', u);

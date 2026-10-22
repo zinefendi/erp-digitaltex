@@ -39,3 +39,19 @@ conversion des articles 0.7.0 ; clients Local / Export avec devise ; journaux et
 - **À faire confirmer par le comptable** : pas de droit de timbre sur un avoir ; texte de la mention légale export (champ
   « Mentions » de Paramètres › Société). **Hors périmètre** : facture électronique TEIF / TTN.
 - Tests automatiques : 80 (dont 9 nouveaux sur les ventes).
+
+## 0.9.1 (22/10/2026) — lignes modifiables, impression DIGITAL-TEX, FODEC, migration 009
+- **Facture** : bouton « Modifier les lignes » dans la Gestion — désignation, quantité (par taille), prix, remise, suppression d'une ligne.
+  Autorisé **tant que la facture n'est pas réglée** (aucun règlement, aucun avoir, aucun encaissement comptable, pas de référence TTN).
+  Le numéro, la date, le client, les taux et le timbre ne changent pas ; une ligne issue d'une commande ne dépasse jamais le reste à facturer ;
+  au moins une ligne ; contrôle vente à perte ; chaque modification est tracée (lignes avant / après, action `facture_lignes_modifiees`).
+- **BL** : quantité modifiable et ligne supprimable **tant que le BL n'est pas facturé** (plafond : commandé − livré par les autres BL).
+  Un BL facturé ne s'annule plus (annuler d'abord la facture) — contrôlé par le serveur.
+- **Avoir** : bouton « Modifier » (Commercial › Avoirs) — quantités, prix baissé (erreur de prix, jamais au-dessus du prix facturé), ligne retirée ;
+  montant recalculé, imputation sur la facture refaite, verrou 30 min + version, audit `avoir_modifie`. Un avoir annulé ne se modifie plus.
+- **Impression au format DIGITAL-TEX** (modèle WinDev fourni) dans tous les modules : factures et BL (Gestion), devis, proformas et avoirs (Ventes),
+  bouton « PDF » dans le journal des ventes et le relevé client (Comptabilité). Pagination automatique (folio 1/2…), montant en lettres,
+  nombre total de pièces, BC client, Livreur / Matricule sur le BL, filigrane « ANNULÉ ». La liste de colisage garde sa mise en page.
+- **FODEC 1 %** sur les ventes locales en dinars (produits, hors prestations), ajouté avant la TVA (TVA sur HT + FODEC), jamais à l'export.
+  Taux daté dans Paramètres › Fiscalité (1 % au 01/01/2026), figé sur chaque facture à sa création ; les factures déjà émises ne changent pas.
+  Compte proposé 4471 (Comptabilité générale › Plan). Colonne FODEC dans le journal des ventes. **À confirmer par le comptable** (taux, assiette, compte).

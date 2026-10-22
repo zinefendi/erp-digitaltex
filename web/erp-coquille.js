@@ -172,19 +172,24 @@ function grandeFenetre(html, onValider) {
 
 // totaux d'une facture : même calcul que l'application 3.3.0 (docs-pdf.js · invoiceTotals)
 function totauxFacture(inv) {
-  const t = (+inv.tva || 0) / 100, ttcMode = inv.pricesTTC !== false;
-  let ht = 0;
-  for (const l of inv.lines || []) {
-    const q = +l.qty || 0, pu = +l.pu || 0, rem = Math.min(100, Math.max(0, +l.remise || 0)) / 100;
-    ht += r3(q * (ttcMode ? pu / (1 + t) : pu) * (1 - rem));
-  }
-  ht = r3(ht);
+  // 0.9.1 : FODEC compris (même calcul que le serveur, api/lib/calculs.js)
+  const t = (+inv.tva || 0) / 100, f = (+inv.fodec || 0) / 100, ttcMode = inv.pricesTTC !== false;
+  const rem = (l) => Math.min(100, Math.max(0, +l.remise || 0)) / 100, presta = (l) => !!(l.service || l.artType === 'prestation');
+  const L = inv.lines || [];
+  let ht, fodec = 0, tva, ttc;
   if (ttcMode) {
-    const exact = r3((inv.lines || []).reduce((s, l) => s + (+l.qty || 0) * (+l.pu || 0) * (1 - Math.min(100, Math.max(0, +l.remise || 0)) / 100), 0));
-    return { ht: r3(exact / (1 + t)), tva: r3(exact - r3(exact / (1 + t))), ttc: exact, timbre: r3(inv.timbre || 0), net: r3(exact + (+inv.timbre || 0)) };
+    const ex = (arr) => arr.reduce((s, l) => s + (+l.qty || 0) * (+l.pu || 0) * (1 - rem(l)), 0);
+    ttc = r3(ex(L));
+    if (!f) ht = r3(ttc / (1 + t));
+    else { const htP = r3(ex(L.filter((l) => !presta(l))) / ((1 + t) * (1 + f))); ht = r3(htP + ex(L.filter(presta)) / (1 + t)); fodec = r3(htP * f); }
+    tva = r3(ttc - ht - fodec);
+  } else {
+    const tot = L.map((l) => r3((+l.qty || 0) * (+l.pu || 0) * (1 - rem(l))));
+    ht = r3(tot.reduce((s, v) => s + v, 0));
+    fodec = r3(L.reduce((s, l, i) => s + (presta(l) ? 0 : tot[i]), 0) * f);
+    tva = r3((ht + fodec) * t); ttc = r3(ht + fodec + tva);
   }
-  const tva = r3(ht * t), ttc = r3(ht + tva);
-  return { ht, tva, ttc, timbre: r3(inv.timbre || 0), net: r3(ttc + (+inv.timbre || 0)) };
+  return { ht, fodec, tva, ttc, timbre: r3(inv.timbre || 0), net: r3(ttc + r3(inv.timbre || 0)) };
 }
 const regleFacture = (inv) => r3((+inv.advance || 0) + (inv.payments || []).reduce((s, p) => s + (+p.amount || 0), 0));
 
@@ -563,10 +568,24 @@ ECRANS.encours = async (m) => {
     const tr = e.target.closest('[data-cl]'); if (!tr) return;
     const c = cl[+tr.dataset.cl];
     grandeFenetre(`<h3>${esc(c.nom)} · relevé</h3><div class="panneau" style="max-height:56vh;overflow:auto"><table><thead><tr><th>Facture</th><th>Date</th><th>Échéance</th><th class="n">Net (DT)</th><th class="n">Réglé</th><th class="n">Reste</th><th>Retard</th></tr></thead><tbody>
-      ${c.lignes.sort((a, b) => (a.f.date || '').localeCompare(b.f.date || '')).map((x) => `<tr><td class="mono"><b>${esc(x.f.number)}</b></td><td>${jour(x.f.date)}</td><td>${jour(x.f.due)}</td><td class="n">${dt(x.net)}</td><td class="n">${dt(x.regle)}</td><td class="n"><b>${dt(x.reste)}</b></td><td>${x.reste > 0.0005 && x.j < 0 ? `<span class="badge ret">${-x.j} j</span>` : x.reste > 0.0005 ? '<span class="badge fut">à échoir</span>' : '<span class="badge vig">soldée</span>'}</td></tr>`).join('')}
+      ${c.lignes.sort((a, b) => (a.f.date || '').localeCompare(b.f.date || '')).map((x) => `<tr><td class="mono"><b>${esc(x.f.number)}</b> <button type="button" class="btn ghost sm" data-pdf="${esc(x.f.id)}" title="Imprimer au format DIGITAL-TEX">PDF</button></td><td>${jour(x.f.date)}</td><td>${jour(x.f.due)}</td><td class="n">${dt(x.net)}</td><td class="n">${dt(x.regle)}</td><td class="n"><b>${dt(x.reste)}</b></td><td>${x.reste > 0.0005 && x.j < 0 ? `<span class="badge ret">${-x.j} j</span>` : x.reste > 0.0005 ? '<span class="badge fut">à échoir</span>' : '<span class="badge vig">soldée</span>'}</td></tr>`).join('')}
       </tbody></table></div><div class="pied"><button class="btn" value="ok">Fermer</button></div>`, () => true);
+    $('#fen-form').addEventListener('click', (ev) => { const b = ev.target.closest('[data-pdf]'); if (b) imprimerFactureDT(g.invoices.find((f) => f.id === b.dataset.pdf)); });
   };
 };
+
+// 0.9.1 : facture imprimée au format DIGITAL-TEX depuis la comptabilité (même gabarit que la Gestion)
+async function imprimerFactureDT(f) {
+  try {
+    if (!f) return;
+    if (!window.DocsDT) throw new Error('Module d’impression non chargé : rechargez la page (Ctrl+F5).');
+    const G = await gestion(), cl = (G.clients || []).find((c) => c.id === f.client?.id);
+    const bytes = await window.DocsDT.buildDocDT(window.DocsDT.dataFacture(f, { clientCode: (cl && cl.code) || '' }));
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    if (!window.open(url, '_blank')) { const a = document.createElement('a'); a.href = url; a.download = f.number + '.pdf'; document.body.appendChild(a); a.click(); a.remove(); }
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch (x) { toast(x.message, true); }
+}
 
 /* ---------- BOM : produits du catalogue ---------- */
 ECRANS.articles = async (m) => {
@@ -863,7 +882,7 @@ ECRANS.journalVentes = async (m) => {
   if (exigeVis(m, 'Exports comptables', ['prix'])) return;
   const g = await gestion(true);
   const exp = peut('compta_clients.exports', 'exporter'), expB = peut('compta_clients.comptes', 'exporter') && voit('encours');
-  m.innerHTML = entete('Journal des ventes', 'Une ligne par facture : HT, TVA, timbre, net, réglé, reste. Les factures export (EUR / USD, TVA 0 %) gardent leur devise : pas d’écart de change (réponse du comptable).',
+  m.innerHTML = entete('Journal des ventes', 'Une ligne par facture : HT, FODEC, TVA, timbre, net, réglé, reste. Bouton « PDF » : facture au format DIGITAL-TEX. Les factures export (EUR / USD, TVA 0 %) gardent leur devise : pas d’écart de change (réponse du comptable).',
     `<div class="row-f">${periodeHtml()}${boutonsExport('ventes', '/api/compta/export/ventes', exp)}</div>`) +
     (expB ? `<div class="row-f" style="margin:-6px 0 14px"><span class="mute small">Balance âgée clients :</span>${boutonsExport('bal', '/api/compta/export/balance-clients')}</div>` : '') +
     '<div class="panneau" id="liste" style="overflow:auto"></div>';
@@ -871,11 +890,12 @@ ECRANS.journalVentes = async (m) => {
     const du = $('#per-du').value, au = $('#per-au').value;
     const l = g.invoices.filter((f) => (!du || f.date >= du) && (!au || f.date <= au)).sort((a, b) => (a.number || '').localeCompare(b.number || '')).map((f) => ({ f, t: totauxFacture(f), d: devF(f) }));
     const ok = l.filter((x) => x.f.status !== 'annulee'); const devs = [...new Set(ok.map((x) => x.d))];
-    $('#liste').innerHTML = l.length ? `<table class="nombres"><thead><tr><th>Date</th><th>Facture</th><th>Client</th><th class="masque-mobile">MF client</th><th class="n">HT</th><th class="n">TVA</th><th class="n">Timbre</th><th class="n">Net</th><th>État</th></tr></thead><tbody>
-      ${l.map(({ f, t, d }) => `<tr class="${f.status === 'annulee' ? 'barre-l' : ''}"><td>${jour(f.date)}</td><td class="mono"><b>${esc(f.number)}</b>${f.export ? ' <span class="etiq">export</span>' : ''}</td><td>${esc(f.client?.name || '')}</td><td class="masque-mobile mono small">${esc(f.client?.mf || '—')}</td><td class="n">${md(t.ht, d)}</td><td class="n">${md(t.tva, d)}</td><td class="n">${md(t.timbre, d)}</td><td class="n"><b>${md(t.net, d)}</b></td><td>${f.status === 'annulee' ? '<span class="badge anc">Annulée</span>' : '<span class="badge vig">Émise</span>'}</td></tr>`).join('')}
-      </tbody><tfoot>${devs.map((dv) => { const s = (k) => ok.filter((x) => x.d === dv).reduce((a, x) => a + x.t[k], 0); return `<tr><td colspan="4"><b>Total ${dv} (hors annulées)</b></td><td class="n">${md(s('ht'), dv)}</td><td class="n">${md(s('tva'), dv)}</td><td class="n">${md(s('timbre'), dv)}</td><td class="n"><b>${md(s('net'), dv)}</b></td><td></td></tr>`; }).join('')}</tfoot></table>` : '<div class="vide">Aucune facture sur cette période.</div>';
+    $('#liste').innerHTML = l.length ? `<table class="nombres"><thead><tr><th>Date</th><th>Facture</th><th>Client</th><th class="masque-mobile">MF client</th><th class="n">HT</th><th class="n">FODEC</th><th class="n">TVA</th><th class="n">Timbre</th><th class="n">Net</th><th>État</th></tr></thead><tbody>
+      ${l.map(({ f, t, d }) => `<tr class="${f.status === 'annulee' ? 'barre-l' : ''}"><td>${jour(f.date)}</td><td class="mono"><b>${esc(f.number)}</b>${f.export ? ' <span class="etiq">export</span>' : ''} <button type="button" class="btn ghost sm" data-pdf="${esc(f.id)}" title="Imprimer au format DIGITAL-TEX">PDF</button></td><td>${esc(f.client?.name || '')}</td><td class="masque-mobile mono small">${esc(f.client?.mf || '—')}</td><td class="n">${md(t.ht, d)}</td><td class="n">${md(t.fodec, d)}</td><td class="n">${md(t.tva, d)}</td><td class="n">${md(t.timbre, d)}</td><td class="n"><b>${md(t.net, d)}</b></td><td>${f.status === 'annulee' ? '<span class="badge anc">Annulée</span>' : '<span class="badge vig">Émise</span>'}</td></tr>`).join('')}
+      </tbody><tfoot>${devs.map((dv) => { const s = (k) => ok.filter((x) => x.d === dv).reduce((a, x) => a + x.t[k], 0); return `<tr><td colspan="4"><b>Total ${dv} (hors annulées)</b></td><td class="n">${md(s('ht'), dv)}</td><td class="n">${md(s('fodec'), dv)}</td><td class="n">${md(s('tva'), dv)}</td><td class="n">${md(s('timbre'), dv)}</td><td class="n"><b>${md(s('net'), dv)}</b></td><td></td></tr>`; }).join('')}</tfoot></table>` : '<div class="vide">Aucune facture sur cette période.</div>';
   };
   $('#per-du').onchange = dess; $('#per-au').onchange = dess; dess();
+  $('#liste').onclick = (e) => { const b = e.target.closest('[data-pdf]'); if (b) imprimerFactureDT(g.invoices.find((f) => f.id === b.dataset.pdf)); };
 };
 
 /* ---------- Comptabilité fournisseurs : factures ---------- */

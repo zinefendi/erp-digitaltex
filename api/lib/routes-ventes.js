@@ -36,12 +36,12 @@ const TRANSITIONS = {
   avoirs: { annule: [['emis'], 'annuler'] },
 };
 const INCOTERMS = ['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF'];
-const MONTANTS = ['ht', 'montant_tva', 'ttc', 'net', 'timbre', 'a_rembourser', 'taux_change'];
+const MONTANTS = ['ht', 'montant_fodec', 'montant_tva', 'ttc', 'net', 'timbre', 'a_rembourser', 'taux_change'];
 
 // ------------------------------------------------------------------ lecture et masquage
 const COLONNES = `d.id, d.type, d.numero, to_char(d.date, 'YYYY-MM-DD') date, to_char(d.validite, 'YYYY-MM-DD') validite,
   d.client_id, d.client, d.ref_client, d.type_client, d.devise, d.langue, d.incoterm, d.lieu_incoterm, d.taux_change::float8 taux_change,
-  d.prix_ttc, d.tva::float8 tva, d.timbre::float8 timbre, d.lignes, d.ht::float8 ht, d.montant_tva::float8 montant_tva, d.ttc::float8 ttc,
+  d.prix_ttc, d.tva::float8 tva, d.fodec::float8 fodec, d.timbre::float8 timbre, d.lignes, d.ht::float8 ht, d.montant_fodec::float8 montant_fodec, d.montant_tva::float8 montant_tva, d.ttc::float8 ttc,
   d.net::float8 net, d.a_rembourser::float8 a_rembourser, d.conditions, d.note, d.colisage, d.statut, d.motif,
   d.origine_id, o.numero origine_num, d.commande_id, d.commande_num, d.facture_id, d.facture_num, d.vente_perte, d.version,
   d.cree_le, cu.identifiant cree_par, d.maj_le, mu.identifiant maj_par,
@@ -116,7 +116,7 @@ async function controlePerte(db, req, doc, confirmer, entite, entiteId) {
   if (doc.devise !== 'DT' && doc.lignes.some((l) => l.produit) && !(doc.taux_change > 0)) {
     throw leve('taux_change_requis', `Indiquez le taux de change (1 ${doc.devise} = ? DT) : il est mémorisé sur le document et sert à contrôler la vente à perte des produits finis.`);
   }
-  const perte = await V.lignesEnPerte(db, doc.lignes, { ttc: doc.prix_ttc, tva: doc.tva, devise: doc.devise, taux: doc.taux_change });
+  const perte = await V.lignesEnPerte(db, doc.lignes, { ttc: doc.prix_ttc, tva: doc.tva, fodec: doc.fodec, devise: doc.devise, taux: doc.taux_change });
   if (!perte.length) return false;
   if (!confirmer) {
     throw leve('vente_a_perte', `Attention : vente à perte sur ${perte.map((p) => `${p.ref} (prix ${p.pu_ht_dt.toFixed(3)} DT HT < prix de revient ${p.pri.toFixed(3)} DT)`).join(', ')}. Confirmez la vente à perte pour enregistrer.`, 409, { lignes: perte });
@@ -130,11 +130,12 @@ async function construire(db, b, avant) {
   const cl = await client(db, b.client_id ?? avant?.client_id);
   const date = b.date || avant?.date || jour();
   const export_ = cl.type_client === 'export';
-  let tva = 0, prixTtc = false;
+  let tva = 0, prixTtc = false, fodec = 0;
   if (!export_) {
     const t = await taux(db, 'tva_normale', date);
     if (t === null) throw leve('tva_absente', 'Aucun taux de TVA en vigueur à cette date (Paramètres › Fiscalité).');
     tva = t; prixTtc = b.prix_ttc ?? avant?.prix_ttc ?? true;
+    fodec = cl.devise === 'DT' ? ((await taux(db, 'fodec', date)) || 0) : 0; // 0.9.1 : FODEC des ventes locales
   }
   const lignes = await nettoyerLignes(db, b.lignes ?? avant?.lignes, cl.devise);
   const incoterm = export_ ? String(b.incoterm ?? avant?.incoterm ?? '').toUpperCase() : '';
@@ -147,19 +148,19 @@ async function construire(db, b, avant) {
     ref_client: String(b.ref_client ?? avant?.ref_client ?? '').trim().slice(0, 80),
     langue: export_ ? ((b.langue ?? avant?.langue) === 'en' ? 'en' : 'fr') : 'fr',
     incoterm, lieu_incoterm: export_ ? String(b.lieu_incoterm ?? avant?.lieu_incoterm ?? '').trim().slice(0, 80) : '',
-    taux_change: tc, prix_ttc: prixTtc, tva, timbre: 0, lignes,
+    taux_change: tc, prix_ttc: prixTtc, tva, fodec, timbre: 0, lignes,
     conditions: String(b.conditions ?? avant?.conditions ?? '').trim().slice(0, 500),
     note: String(b.note ?? avant?.note ?? '').trim().slice(0, 1000),
     colisage: export_ ? nettoyerColisage(b.colisage ?? avant?.colisage ?? []) : [],
   };
   if (doc.validite && doc.validite < doc.date) throw leve('validite_invalide', 'La date de validité doit être postérieure à la date du document.');
   const t = V.totaux(doc);
-  doc.lignes = t.lignes; doc.ht = t.ht; doc.montant_tva = t.tva; doc.ttc = t.ttc; doc.net = t.net;
+  doc.lignes = t.lignes; doc.ht = t.ht; doc.montant_fodec = t.fodec; doc.montant_tva = t.tva; doc.ttc = t.ttc; doc.net = t.net;
   return doc;
 }
 
 const CHAMPS_DOC = ['client_id', 'client', 'ref_client', 'type_client', 'devise', 'date', 'validite', 'langue', 'incoterm', 'lieu_incoterm',
-  'taux_change', 'prix_ttc', 'tva', 'timbre', 'lignes', 'ht', 'montant_tva', 'ttc', 'net', 'conditions', 'note', 'colisage'];
+  'taux_change', 'prix_ttc', 'tva', 'fodec', 'timbre', 'lignes', 'ht', 'montant_fodec', 'montant_tva', 'ttc', 'net', 'conditions', 'note', 'colisage'];
 const JSONB = new Set(['client', 'lignes', 'colisage']);
 
 async function inserer(c, req, type, doc, extra = {}) {
@@ -174,6 +175,41 @@ async function inserer(c, req, type, doc, extra = {}) {
 const resume = (d) => d && { numero: d.numero, statut: d.statut, client: d.client?.name, devise: d.devise, net: d.net, lignes: (d.lignes || []).length };
 
 // ------------------------------------------------------------------ avoirs : quantités déjà créditées
+const LIGNES_AVOIR = { type: 'array', maxItems: 300, items: { type: 'object', additionalProperties: false, required: ['index', 'qte'],
+  properties: { index: { type: 'integer', minimum: 0 }, qte: { type: 'number', minimum: 0 }, pu: { type: 'number', minimum: 0 } } } };
+const creditees = (avoirs) => { const m = {}; for (const a of avoirs) for (const l of a.lignes) m[l.index] = r3((m[l.index] || 0) + (+l.qte || 0)); return m; };
+/** Lignes d'avoir contrôlées : quantité ≤ reste créditable de la ligne de facture ; prix ≤ prix facturé (erreur de prix).
+ *  `sel` null = avoir total du reste. */
+async function lignesAvoir(f, autres, sel) {
+  const credite = creditees(autres);
+  const choix = sel === null ? (f.lines || []).map((l, i) => ({ index: i, qte: r3((+l.qty || 0) - (credite[i] || 0)) })) : sel;
+  const lignes = [], vus = new Set();
+  for (const s of choix) {
+    const l = (f.lines || [])[s.index];
+    if (!l) throw leve('ligne_invalide', `Ligne ${s.index + 1} absente de la facture.`);
+    if (vus.has(s.index)) throw leve('ligne_invalide', `Ligne « ${l.designation} » en double.`);
+    vus.add(s.index);
+    const reste = r3((+l.qty || 0) - (credite[s.index] || 0));
+    if (!(s.qte > 0)) continue;
+    if (s.qte > reste + 0.0005) throw leve('trop_credite', `Ligne « ${l.designation} » : ${reste} au plus à créditer (déjà ${credite[s.index] || 0} sur ${+l.qty || 0}).`);
+    const puF = +l.pu || 0, pu = s.pu === undefined ? puF : +s.pu;
+    if (pu > puF + 0.0005) throw leve('prix_trop_eleve', `Ligne « ${l.designation} » : le prix de l’avoir ne dépasse pas le prix facturé (${puF}).`);
+    lignes.push({ index: s.index, produit: V.REF_PF.test(String(l.article || '')) ? l.article : '', designation: l.designation, couleur: l.color || '', taille: l.size || '',
+      qte: r3(s.qte), pu, remise: +l.remise || 0, service: !!(l.service || l.artType === 'prestation') });
+  }
+  if (!lignes.length) throw leve('rien_a_crediter', sel === null ? 'Aucune quantité à créditer : la facture est déjà entièrement couverte par des avoirs.' : 'Indiquez au moins une quantité à créditer.');
+  return lignes;
+}
+/** Document avoir au format ventes.documents : mêmes taux que la facture (TVA, FODEC, mode TTC), montants recalculés. */
+function docAvoir(f, lignes, date, note) {
+  const dev = devFacture(f);
+  const doc = { client_id: String(f.client?.id || ''), client: f.client || {}, ref_client: f.clientPO || '', type_client: dev === 'DT' ? 'local' : 'export', devise: dev,
+    date, validite: null, langue: f.langue === 'en' ? 'en' : 'fr', incoterm: f.incoterm || '', lieu_incoterm: '', taux_change: null,
+    prix_ttc: f.pricesTTC !== false, tva: +f.tva || 0, fodec: +f.fodec || 0, timbre: 0, lignes, conditions: '', note: String(note || '').trim(), colisage: [] };
+  const t = V.totaux(doc);
+  doc.lignes = t.lignes; doc.ht = t.ht; doc.montant_fodec = t.fodec; doc.montant_tva = t.tva; doc.ttc = t.ttc; doc.net = t.net;
+  return doc;
+}
 async function avoirsDe(db, factureId, sauf) {
   return (await db.query(`select id, numero, lignes, net::float8 net from ventes.documents where type = 'avoir' and facture_id = $1 and statut = 'emis'${sauf ? ' and id <> $2' : ''}`,
     sauf ? [factureId, sauf] : [factureId])).rows;
@@ -351,7 +387,7 @@ module.exports = async function routesVentes(app) {
     schema: { body: { type: 'object', additionalProperties: false, required: ['facture_id', 'motif'], properties: {
       facture_id: { type: 'string', maxLength: 40 }, date: { type: 'string', format: 'date' }, motif: { type: 'string', minLength: 1, maxLength: 300 },
       total: { type: 'boolean' }, note: { type: 'string', maxLength: 1000 },
-      lignes: { type: 'array', maxItems: 300, items: { type: 'object', additionalProperties: false, required: ['index', 'qte'], properties: { index: { type: 'integer', minimum: 0 }, qte: { type: 'number', minimum: 0 } } } } } } },
+      lignes: LIGNES_AVOIR } } },
   }, avecErreurs(async (req, reply) => {
     if (!D.peut(req.droits, 'commercial.avoirs', 'creer') || !D.voit(req.droits, 'prix')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas d’établir un avoir.');
     const b = req.body, date = b.date || jour();
@@ -363,28 +399,10 @@ module.exports = async function routesVentes(app) {
       if (f.status === 'annulee') return erreur(reply, 400, 'facture_annulee', `La facture ${f.number} est annulée : aucun avoir possible.`);
       if (date < f.date) return erreur(reply, 400, 'date_invalide', 'L’avoir ne peut pas être antérieur à la facture.');
       const deja = await avoirsDe(c, f.id);
-      const credite = {};
-      for (const a of deja) for (const l of a.lignes) credite[l.index] = r3((credite[l.index] || 0) + (+l.qte || 0));
-      const sel = b.total ? (f.lines || []).map((l, i) => ({ index: i, qte: r3((+l.qty || 0) - (credite[i] || 0)) })) : (b.lignes || []);
-      const lignes = [];
-      for (const s of sel) {
-        const l = (f.lines || [])[s.index];
-        if (!l) return erreur(reply, 400, 'ligne_invalide', `Ligne ${s.index + 1} absente de la facture.`);
-        const reste = r3((+l.qty || 0) - (credite[s.index] || 0));
-        if (!(s.qte > 0)) continue;
-        if (s.qte > reste + 0.0005) return erreur(reply, 400, 'trop_credite', `Ligne « ${l.designation} » : ${reste} au plus à créditer (déjà ${credite[s.index] || 0} sur ${+l.qty || 0}).`);
-        lignes.push({ index: s.index, produit: V.REF_PF.test(String(l.article || '')) ? l.article : '', designation: l.designation, couleur: l.color || '', taille: l.size || '',
-          qte: r3(s.qte), pu: +l.pu || 0, remise: +l.remise || 0, service: !!(l.service || l.artType === 'prestation') });
-      }
-      if (!lignes.length) return erreur(reply, 400, 'rien_a_crediter', 'Aucune quantité à créditer : la facture est déjà entièrement couverte par des avoirs.');
-      const dev = devFacture(f);
+      const doc = docAvoir(f, await lignesAvoir(f, deja, b.total ? null : (b.lignes || [])), date, b.note);
       const cl = (await c.query(`select donnees from commercial.documents where collection = 'clients' and id = $1`, [String(f.client?.id || '')])).rows[0]?.donnees;
-      const doc = { client_id: String(f.client?.id || ''), client: f.client || {}, ref_client: f.clientPO || '', type_client: dev === 'DT' ? 'local' : 'export', devise: dev,
-        date, validite: null, langue: f.langue === 'en' ? 'en' : 'fr', incoterm: f.incoterm || '', lieu_incoterm: '', taux_change: null,
-        prix_ttc: f.pricesTTC !== false, tva: +f.tva || 0, timbre: 0, lignes, conditions: '', note: String(b.note || '').trim(), colisage: [] };
-      if (cl?.type_client === 'export' && dev === 'DT') doc.type_client = 'export';
-      const t = V.totaux(doc);
-      doc.lignes = t.lignes; doc.ht = t.ht; doc.montant_tva = t.tva; doc.ttc = t.ttc; doc.net = t.net;
+      if (cl?.type_client === 'export' && doc.devise === 'DT') doc.type_client = 'export';
+      const dev = doc.devise;
       // imputation sur le reste dû de la facture (règlements + avoirs déjà imputés)
       const reste = C.resteFacture(f);
       const impute = r3(Math.min(doc.net, reste));
@@ -401,16 +419,55 @@ module.exports = async function routesVentes(app) {
     });
   }));
 
+  // 0.9.1 : modification des lignes d'un avoir émis (quantités, prix ≤ prix facturé, suppression de lignes).
+  // Montants recalculés par le serveur, imputation sur la facture refaite, verrou 30 min + version, audit avant / après.
+  app.put('/api/ventes/avoirs/:id', { preHandler: S.exigerConnexion(),
+    schema: { params: { type: 'object', properties: { id: { type: 'integer' } } }, body: { type: 'object', additionalProperties: false, required: ['version', 'lignes'], properties: {
+      version: { type: 'integer' }, motif: { type: 'string', minLength: 1, maxLength: 300 }, note: { type: 'string', maxLength: 1000 }, lignes: LIGNES_AVOIR } } },
+  }, avecErreurs(async (req, reply) => {
+    if (!D.peut(req.droits, 'commercial.avoirs', 'modifier') || !D.voit(req.droits, 'prix')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas de modifier un avoir.');
+    const b = req.body;
+    if (b.motif !== undefined && !b.motif.trim()) return erreur(reply, 400, 'motif_requis', 'Le motif de l’avoir est obligatoire.');
+    return transaction(async (c) => {
+      await c.query('select pg_advisory_xact_lock(727003, 1)');
+      const av = (await c.query(`select ${COLONNES} ${FROM} where d.id = $1 and d.type = 'avoir' for update of d`, [req.params.id])).rows[0];
+      if (!av) return erreur(reply, 404, 'introuvable', 'Avoir introuvable.');
+      const v = await V.verrouAutre(c, 'avoir', av.id, req.utilisateur.id);
+      if (v) return erreur(reply, 423, 'verrouille', `L’avoir ${av.numero} est en cours de modification par ${v.par}${v.poste ? ' (' + v.poste + ')' : ''}. Réessayez plus tard.`, { verrou: v });
+      if (b.version !== av.version) return erreur(reply, 409, 'conflit_version', `L’avoir ${av.numero} a été modifié entre-temps sur un autre poste. Rechargez.`);
+      if (av.statut !== 'emis') return erreur(reply, 400, 'non_modifiable', `L’avoir ${av.numero} est annulé : il ne se modifie plus.`);
+      const f = (await c.query(`select donnees from commercial.documents where collection = 'invoices' and id = $1 for update`, [av.facture_id])).rows[0]?.donnees;
+      if (!f) return erreur(reply, 404, 'introuvable', 'Facture d’origine introuvable.');
+      if (f.status === 'annulee') return erreur(reply, 400, 'facture_annulee', `La facture ${f.number} est annulée.`);
+      if (!b.lignes.some((l) => l.qte > 0)) return erreur(reply, 400, 'lignes_absentes', 'Un avoir garde au moins une ligne : pour tout retirer, annulez-le.');
+      const doc = docAvoir(f, await lignesAvoir(f, await avoirsDe(c, f.id, av.id), b.lignes), av.date, b.note ?? av.note);
+      doc.type_client = av.type_client;
+      // imputation : on retire celle de cet avoir, puis on impute le nouveau montant sur le reste dû
+      f.payments = (f.payments || []).filter((p) => p.avoir !== Number(av.id));
+      const impute = r3(Math.min(doc.net, C.resteFacture(f)));
+      const motif = (b.motif ?? av.motif).trim();
+      if (impute > 0) f.payments.push({ id: av.numero, date: av.date, amount: impute, mode: 'Avoir', ref: `${av.numero} · ${motif}`.slice(0, 120), avoir: Number(av.id) });
+      f.updatedAt = new Date().toISOString();
+      await c.query(`update commercial.documents set donnees = $1, maj_le = now(), maj_par = $2 where collection = 'invoices' and id = $3`, [f, req.utilisateur.id, f.id]);
+      await c.query(`update ventes.documents set lignes = $1, ht = $2, montant_fodec = $3, montant_tva = $4, ttc = $5, net = $6, note = $7, motif = $8, a_rembourser = $9,
+          version = version + 1, maj_le = now(), maj_par = $10 where id = $11`,
+        [JSON.stringify(doc.lignes), doc.ht, doc.montant_fodec, doc.montant_tva, doc.ttc, doc.net, doc.note, motif, r3(doc.net - impute), req.utilisateur.id, av.id]);
+      const res = (d) => ({ net: d.net, lignes: (d.lignes || []).map((l) => ({ designation: l.designation, qte: l.qte, pu: l.pu })) });
+      await S.auditer(c, req, 'avoir_modifie', { entite: 'avoir', entiteId: av.numero, avant: res(av), apres: { ...res(doc), impute, a_rembourser: r3(doc.net - impute) } });
+      return masquer(req.droits, await lireUn(c, av.id, 'avoir'));
+    });
+  }));
+
   // Lignes d'une facture avec les quantités encore créditables (écran « Nouvel avoir »)
   app.get('/api/ventes/factures/:id/creditable', { preHandler: S.exigerConnexion({ droit: ['commercial.avoirs', 'creer'] }),
-    schema: { params: { type: 'object', properties: { id: { type: 'string', maxLength: 40 } } } } }, async (req, reply) => {
+    schema: { params: { type: 'object', properties: { id: { type: 'string', maxLength: 40 } } }, querystring: { type: 'object', properties: { sauf: { type: 'integer' } } } } }, async (req, reply) => {
     if (!D.voit(req.droits, 'prix')) return erreur(reply, 403, 'interdit', 'Cet écran contient des montants.');
     const f = (await pool.query(`select donnees from commercial.documents where collection = 'invoices' and id = $1`, [req.params.id])).rows[0]?.donnees;
     if (!f) return erreur(reply, 404, 'introuvable', 'Facture introuvable.');
-    const credite = {};
-    for (const a of await avoirsDe(pool, f.id)) for (const l of a.lignes) credite[l.index] = r3((credite[l.index] || 0) + (+l.qte || 0));
+    const sauf = req.query.sauf ? Number(req.query.sauf) : null; // 0.9.1 : modification d'un avoir → ses propres quantités restent créditables
+    const credite = creditees(await avoirsDe(pool, f.id, sauf));
     const t = C.totauxFacture(f);
-    return { id: f.id, numero: f.number, date: f.date, client: f.client, devise: devFacture(f), statut: f.status, net: t.net, reste: C.resteFacture(f), prix_ttc: f.pricesTTC !== false, tva: +f.tva || 0,
+    return { id: f.id, numero: f.number, date: f.date, client: f.client, devise: devFacture(f), statut: f.status, net: t.net, reste: r3(C.resteFacture(f) + (sauf ? (f.payments || []).filter((p) => p.avoir === sauf).reduce((x, p) => x + (+p.amount || 0), 0) : 0)), prix_ttc: f.pricesTTC !== false, tva: +f.tva || 0, fodec: +f.fodec || 0,
       lignes: (f.lines || []).map((l, i) => ({ index: i, designation: l.designation, qte: +l.qty || 0, pu: +l.pu || 0, remise: +l.remise || 0, credite: credite[i] || 0, creditable: r3((+l.qty || 0) - (credite[i] || 0)) })) };
   });
 

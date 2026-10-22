@@ -1,7 +1,8 @@
 // Uniform Studio 3D — fenêtre « Gestion » : commandes, avances, bons de livraison, factures, clients.
 // Données locales (processus principal, gestion.json + .bak). Documents PDF dans Documents\Uniform Studio 3D\.
 import { attachDatePickers, isoToday, isoToFr, addDays } from './datepick.js';
-import { buildBL, buildInvoice, buildReceipt, dt, amountWords, cur, money } from './docs-pdf.js';
+import { buildReceipt, dt, amountWords, cur, money } from './docs-pdf.js';
+import { buildDocDT, dataFacture, dataBL } from './docs-dt.js';
 import { staffList, gset, nextNumber, peekNumber, ensureClient, clientSnap, orderTotal, advancesTotal, delivered, deliveryState, invoicesOf, invoicedLines, advanceUsed, paidOf, invoiceState, orderState, groupInvoiceLines, invoiceTotals, rid, r3 } from './gestion-core.js';
 
 const D = window.uniformDesktop;
@@ -125,7 +126,9 @@ function blsView() {
     ${L.length ? L.map((x) => `<button class="li ${x.id === selId ? 'on' : ''}" data-sel="${x.id}"><div><b>${esc(x.number)}</b>${chip(x.status || 'livre')}</div><div>${esc(x.client.name)}</div><small>${isoToFr(x.date)} · commande ${esc(x.orderNumber)} · ${(x.lines || []).reduce((s, l) => s + (+l.qty || 0), 0)} pcs</small></button>`).join('') : '<p class="empty">Aucun bon de livraison.<br><small>Créez-les depuis une commande (« + Bon de livraison »).</small></p>'}</aside>
     <section class="detail">${b ? `<div class="dh"><div><h2>Bon de livraison ${esc(b.number)}</h2>${chip(b.status || 'livre')}</div><div class="row"><button class="btn" data-act="blpdf">PDF</button>${b.status === 'annule' ? '' : `<button class="btn ghost" data-act="blinv" ${db.invoices.some((i) => i.status !== 'annulee' && (i.blIds || []).includes(b.id)) ? 'disabled title="Déjà facturé"' : ''}>Facturer ce BL</button><button class="btn ghost" data-act="blcancel">Annuler le BL</button>`}</div></div>
       <div class="kv"><span>Date</span><b>${isoToFr(b.date)}</b><span>Client</span><b>${esc(b.client.name)}</b><span>Commande</span><b><button class="linkb" data-open="orders:${b.orderId}">${esc(b.orderNumber)}</button></b><span>BC client</span><b>${esc(b.clientPO || '—')}</b></div>
-      <table class="t"><thead><tr><th>Désignation</th><th>Staff</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th></tr></thead><tbody>${(b.lines || []).map((l) => `<tr><td>${esc(l.designation)}</td><td>${esc(l.staff || '')}</td><td>${esc(l.color || '')}</td><td>${esc(l.size || '')}</td><td class="n b">${l.qty}</td></tr>`).join('')}</tbody></table>
+      ${blEditable(b) ? '<p class="hint">Ce BL n’est pas encore facturé : vous pouvez corriger une quantité ou supprimer une ligne (le reste redevient « à livrer »).</p>' : ''}
+      <table class="t ed"><thead><tr><th>Désignation</th><th>Staff</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th><th></th></tr></thead><tbody>${(b.lines || []).map((l, k) => `<tr><td>${esc(l.designation)}</td><td>${esc(l.staff || '')}</td><td>${esc(l.color || '')}</td><td>${esc(l.size || '')}</td>
+        <td class="n b">${blEditable(b) ? `<input type="number" min="1" step="1" data-bll="${k}" value="${l.qty}">` : l.qty}</td><td>${blEditable(b) ? `<button class="ib" data-bldel="${k}" title="Supprimer la ligne">✕</button>` : ''}</td></tr>`).join('')}</tbody></table>
       ${b.note ? `<p class="mute">Observations : ${esc(b.note)}</p>` : ''}` : '<p class="empty">Sélectionnez un bon de livraison.</p>'}</section></div>`;
 }
 
@@ -141,11 +144,12 @@ function invoicesView() {
 function invoiceDetail(i) {
   const X = invoiceTotals(i), paid = paidOf(i), rest = r3(Math.max(0, X.net - paid)), off = i.status === 'annulee';
   const C = cur(i), M = (v) => money(v, C);
-  return `<div class="dh"><div><h2>Facture ${esc(i.number)}</h2>${off ? chip('annulee') : invChip(i)}</div><div class="row"><button class="btn" data-act="invpdf">PDF</button>${off ? '' : '<button class="btn ghost" data-act="invcancel">Annuler la facture</button>'}</div></div>
+  return `<div class="dh"><div><h2>Facture ${esc(i.number)}</h2>${off ? chip('annulee') : invChip(i)}</div><div class="row"><button class="btn" data-act="invpdf">PDF</button>${invEditable(i) ? '<button class="btn ghost" data-act="invedit">Modifier les lignes</button>' : ''}${off ? '' : '<button class="btn ghost" data-act="invcancel">Annuler la facture</button>'}</div></div>
+    ${!off && !invEditable(i) ? '<p class="hint">Facture réglée (règlement ou avoir) : ses lignes ne se modifient plus — corrigez par un avoir (Commercial › Avoirs).</p>' : ''}
     <div class="kv"><span>Date</span><b>${isoToFr(i.date)}</b><span>Échéance</span><b class="${!off && rest > 0 && i.due < isoToday() ? 'r' : ''}">${isoToFr(i.due)}</b><span>Client</span><b>${esc(i.client.name)}</b>
       <span>Commande</span><b>${i.orderId ? `<button class="linkb" data-open="orders:${i.orderId}">${esc(i.orderNumber)}</button>` : '—'}</b><span>BL</span><b>${esc((i.blNumbers || []).join(', ') || '—')}</b><span>BC client</span><b>${esc(i.clientPO || '—')}</b>${i.export ? `<span>Vente</span><b>Exportation · ${esc(C)}${i.incoterm ? ' · ' + esc(i.incoterm) : ''}</b>` : ''}${i.ttnRef ? `<span>Réf. TTN</span><b>${esc(i.ttnRef)}</b>` : ''}</div>
     <table class="t"><thead><tr><th>Désignation</th><th class="n">Qté</th><th class="n">P.U. HT</th><th class="n">Remise</th><th class="n">Total HT</th></tr></thead><tbody>${X.lines.map((l) => `<tr><td>${esc(l.designation)}</td><td class="n">${l.qty}</td><td class="n">${dt(l.puHT)}</td><td class="n">${l.remise ? l.remise + ' %' : ''}</td><td class="n b">${dt(l.totHT)}</td></tr>`).join('')}</tbody></table>
-    <div class="tot"><div><span>Total HT</span><b>${M(X.ht)}</b></div><div><span>TVA ${i.tva} %</span><b>${M(X.tva)}</b></div><div><span>Total TTC</span><b>${M(X.ttc)}</b></div>${X.timbre ? `<div><span>Timbre</span><b>${M(X.timbre)}</b></div>` : ''}<div class="big"><span>Net à payer</span><b>${M(X.net)}</b></div>
+    <div class="tot"><div><span>Total HT</span><b>${M(X.ht)}</b></div>${X.fodec ? `<div><span>FODEC ${+i.fodec} %</span><b>${M(X.fodec)}</b></div>` : ''}<div><span>TVA ${i.tva} %</span><b>${M(X.tva)}</b></div><div><span>Total TTC</span><b>${M(X.ttc)}</b></div>${X.timbre ? `<div><span>Timbre</span><b>${M(X.timbre)}</b></div>` : ''}<div class="big"><span>Net à payer</span><b>${M(X.net)}</b></div>
       ${+i.advance ? `<div><span>Avance déduite</span><b>- ${M(i.advance)}</b></div>` : ''}${(i.payments || []).map((p) => `<div><span>Règlement ${isoToFr(p.date)} · ${esc(p.mode)}${p.ref ? ' ' + esc(p.ref) : ''}</span><b>- ${M(p.amount)}</b></div>`).join('')}
       <div class="big ${rest > 0 ? 'due' : 'ok'}"><span>Reste à payer</span><b>${M(rest)}</b></div></div>
     <p class="mute small">${esc(amountWords(X.net, C))}.</p>
@@ -186,6 +190,7 @@ document.addEventListener('click', async (ev) => {
     if (d.oldel !== undefined) { const o = curOrder(), l = o.lines[+d.oldel], del = delivered(db, o); if (del[l.id]) return toast('Cette ligne est déjà livrée (BL) : elle ne peut pas être supprimée.', true); if (!confirm(`Supprimer la ligne « ${l.designation} » ?`)) return; o.lines.splice(+d.oldel, 1); await saveOrder(o); return; }
     if (d.advdel !== undefined) { const o = curOrder(), a = o.advances[+d.advdel]; if (!confirm(`Supprimer l’avance de ${M(a.amount)} du ${isoToFr(a.date)} ?`)) return; o.advances.splice(+d.advdel, 1); await saveOrder(o); return; }
     if (d.advpdf !== undefined) { const o = curOrder(), a = o.advances[+d.advpdf]; if (!a.receipt) { a.receipt = await nextNumber(D, cat, 'receipt', a.date); await saveOrder(o, false); } busy('Préparation du reçu…'); const b = await buildReceipt(CO, o, a); busy(false); await D.docs.save('factures', `Recu ${a.receipt} - ${o.client.name}`, b); return; }
+    if (d.bldel !== undefined) { const b = db.bls.find((x) => x.id === selId), l = b.lines[+d.bldel]; if ((b.lines || []).length <= 1) return toast('Un BL garde au moins une ligne : pour tout retirer, annulez le BL.', true); if (!confirm(`Supprimer la ligne « ${[l.designation, l.color, l.size].filter(Boolean).join(' · ')} » (${l.qty} pcs) du BL ${b.number} ? Ces pièces redeviennent « à livrer ».`)) return; await put('bls', { ...b, lines: b.lines.filter((_, k) => k !== +d.bldel) }); render(true); toast('Ligne supprimée du BL.'); return; }
     if (d.paydel !== undefined) { const i = db.invoices.find((x) => x.id === selId); if (!confirm('Supprimer ce règlement ?')) return; i.payments.splice(+d.paydel, 1); await put('invoices', i); render(true); return; }
     if (d.act) await act(d.act, t);
   } catch (e) { busy(false); toast(e.message, true); }
@@ -209,6 +214,13 @@ document.addEventListener('change', async (ev) => {
       else if (d.of === 'date' || d.of === 'delivery') { o[d.of] = t.dataset.iso; if (o.delivery && o.delivery < o.date) o.delivery = ''; }
       else o[d.of] = t.value.trim();
       await saveOrder(o); return;
+    }
+    if (d.bll !== undefined) {
+      const b = db.bls.find((x) => x.id === selId), l = b.lines[+d.bll], o = db.orders.find((x) => x.id === b.orderId), ol = o && o.lines.find((x) => x.id === l.lineId);
+      const max = ol ? (+ol.qty || 0) - (delivered(db, o, b.id)[l.lineId] || 0) : l.qty, v = Math.floor(+t.value || 0);
+      if (!(v >= 1)) { toast('Quantité d’au moins 1 (pour retirer la ligne, cliquez sur ✕).', true); t.value = l.qty; return; }
+      if (v > max) { toast(`${max} au plus pour cette ligne (commande : ${ol ? ol.qty : '?'}, déjà livré par d’autres BL : ${ol ? ol.qty - max : 0}).`, true); t.value = l.qty; return; }
+      await put('bls', { ...b, lines: b.lines.map((x, k) => (k === +d.bll ? { ...x, qty: v } : x)) }); render(true); toast('Quantité du BL modifiée.'); return;
     }
     if (d.cf) { const c = db.clients.find((x) => x.id === selId); c[d.cf] = t.value.trim(); if (d.cf === 'name' && !c.name) return toast('Le nom est obligatoire.', true); await put('clients', c); render(true); return; }
   } catch (e) { toast(e.message, true); }
@@ -261,10 +273,11 @@ async function act(k, btn) {
   else if (k === 'reopen' && o) { o.status = 'en_cours'; await saveOrder(o); }
   else if (k === 'newbl' && o) await newBL(o);
   else if (k === 'newinv' && o) await newInvoice(o, null);
-  else if (k === 'blpdf') { const b = db.bls.find((x) => x.id === selId); busy('Préparation du BL…'); const bytes = await buildBL(CO, b); busy(false); await D.docs.save('bl', `${b.number} - ${b.client.name}`, bytes); }
+  else if (k === 'blpdf') { const b = db.bls.find((x) => x.id === selId); await pdfBL(b); }
   else if (k === 'blcancel') { const b = db.bls.find((x) => x.id === selId); if (db.invoices.some((i) => i.status !== 'annulee' && (i.blIds || []).includes(b.id))) return toast('Ce BL est facturé : annulez d’abord la facture.', true); if (!confirm(`Annuler le BL ${b.number} ? Les quantités redeviennent « à livrer ».`)) return; b.status = 'annule'; await put('bls', b); render(true); }
   else if (k === 'blinv') { const b = db.bls.find((x) => x.id === selId), ord = db.orders.find((x) => x.id === b.orderId); await newInvoice(ord, b); }
-  else if (k === 'invpdf') { const i = db.invoices.find((x) => x.id === selId); busy('Préparation de la facture…'); const bytes = await buildInvoice(CO, i); busy(false); await D.docs.save('factures', `${i.number} - ${i.client.name}`, bytes); }
+  else if (k === 'invpdf') { const i = db.invoices.find((x) => x.id === selId); await pdfFacture(i); }
+  else if (k === 'invedit') { const i = db.invoices.find((x) => x.id === selId); await editInvoice(i); }
   else if (k === 'invcancel') { const i = db.invoices.find((x) => x.id === selId); if (!confirm(`Annuler la facture ${i.number} ? Le numéro reste attribué (pas de trou dans la numérotation) et la facture apparaît « Annulée ».`)) return; i.status = 'annulee'; await put('invoices', i); render(true); }
   else if (k === 'payadd') {
     const i = db.invoices.find((x) => x.id === selId), amt = r3(+$('#payamt').value || 0); if (!(amt > 0)) return toast('Indiquez le montant.', true);
@@ -273,7 +286,7 @@ async function act(k, btn) {
     await put('invoices', i); render(true); toast('Règlement enregistré.');
   }
   else if (k === 'freeinv') await newInvoice(null, null);
-  else if (k === 'newclient') { const r = await ask({ title: 'Nouveau client', fields: [{ k: 'name', label: 'Raison sociale / nom' }, { k: 'contact', label: 'Contact' }, { k: 'phone', label: 'Téléphone' }, { k: 'mf', label: 'Matricule fiscal' }] }); if (!r || !r.name.trim()) return; if (db.clients.some((c) => norm(c.name) === norm(r.name))) return toast('Ce client existe déjà.', true); const c = await put('clients', { ...r, name: r.name.trim(), address: '', city: '', email: '' }); tab = 'clients'; selId = c.id; render(); }
+  else if (k === 'newclient') { const r = await ask({ title: 'Nouveau client', fields: [{ k: 'name', label: 'Raison sociale / nom' }, { k: 'contact', label: 'Contact' }, { k: 'phone', label: 'Téléphone' }, { k: 'mf', label: 'Matricule fiscal' }, { k: 'type_client', label: 'Type de client', type: 'select', value: 'local', options: [['local', 'Local (dinars)'], ['export', 'Export (facture en devise)']] }, { k: 'devise', label: 'Devise (si Export)', type: 'select', value: 'DT', options: [['DT', 'DT — dinars'], ['EUR', 'EUR — euros'], ['USD', 'USD — dollars']] }] }); if (!r || !r.name.trim()) return; if (db.clients.some((c) => norm(c.name) === norm(r.name))) return toast('Ce client existe déjà.', true); const c = await put('clients', { ...r, name: r.name.trim(), address: '', city: '', email: '', type_client: r.type_client === 'export' ? 'export' : 'local', devise: r.devise || 'DT' }); tab = 'clients'; selId = c.id; render(); }
   else if (k === 'delclient') { const c = db.clients.find((x) => x.id === selId); if (db.orders.some((o) => o.client.id === c.id) || db.invoices.some((i) => i.client.id === c.id)) return toast('Ce client a des commandes ou des factures : il ne peut pas être supprimé.', true); if (!confirm(`Supprimer le client « ${c.name} » ?`)) return; await D.db.del('clients', c.id); db = await D.db.get(); selId = null; render(); }
 }
 
@@ -290,7 +303,7 @@ async function newBL(o) {
   const client = clientSnap(db.clients.find((c) => c.id === o.client.id) || o.client);
   const bl = await put('bls', { number: await nextNumber(D, cat, 'bl', r.date), date: r.date, orderId: o.id, orderNumber: o.number, clientPO: o.clientPO || '', client, lines, note: r.note.trim(), status: 'livre' });
   render(true); toast(`BL ${bl.number} créé.`);
-  busy('Préparation du BL…'); const bytes = await buildBL(CO, bl); busy(false); await D.docs.save('bl', `${bl.number} - ${client.name}`, bytes);
+  await pdfBL(bl);
 }
 
 async function newInvoice(o, bl) {
@@ -312,12 +325,12 @@ async function newInvoice(o, bl) {
   const client0 = o ? clientSnap(db.clients.find((c) => c.id === o.client.id) || o.client) : null;
   const advLeft = o ? r3(Math.max(0, advancesTotal(o) - advanceUsed(db, o))) : 0;
   await loadArticles();
-  const draft = { lines: lines.length ? lines : [{ designation: '', qty: 1, pu: 0, remise: 0 }], tva: G.tva, timbre: G.timbre, pricesTTC: G.pricesTTC };
+  const draft = { lines: lines.length ? lines : [{ designation: '', qty: 1, pu: 0, remise: 0 }], tva: G.tva, timbre: G.timbre, fodec: +G.fodec || 0, pricesTTC: G.pricesTTC };
   // ERP 0.7.0 : vente locale (DT, TVA 19 %, timbre) ou à l'exportation (EUR / USD, TVA 0 %, sans timbre — comptable 21/10/2026)
-  const r00 = await ask({ title: 'Type de facture', fields: [{ k: 'kind', label: 'Vente', type: 'select', value: 'DT', options: [['DT', 'Locale — dinars (TVA ' + G.tva + ' %, timbre ' + dt(G.timbre) + ' DT)'], ['EUR', 'Exportation — euros (TVA 0 %)'], ['USD', 'Exportation — dollars US (TVA 0 %)']] }] });
+  const r00 = await ask({ title: 'Type de facture', fields: [{ k: 'kind', label: 'Vente', type: 'select', value: 'DT', options: [['DT', 'Locale — dinars (TVA ' + G.tva + ' %' + (+G.fodec ? ', FODEC ' + G.fodec + ' %' : '') + ', timbre ' + dt(G.timbre) + ' DT)'], ['EUR', 'Exportation — euros (TVA 0 %)'], ['USD', 'Exportation — dollars US (TVA 0 %)']] }] });
   if (!r00) return;
   const EXP = r00.kind !== 'DT';
-  if (EXP) { draft.tva = 0; draft.timbre = 0; draft.pricesTTC = false; if (lines.length) toast('Facture export : vérifiez les prix unitaires, ils doivent être saisis HT dans la devise choisie.'); }
+  if (EXP) { draft.tva = 0; draft.timbre = 0; draft.fodec = 0; draft.pricesTTC = false; if (lines.length) toast('Facture export : vérifiez les prix unitaires, ils doivent être saisis HT dans la devise choisie.'); }
   const r = await ask({ title: o ? `Facture · commande ${o.number}${blIds.length ? ' · ' + db.bls.find((b) => b.id === blIds[0]).number : ''}` : 'Facture libre', wide: true, okLabel: 'Valider la facture', fields: [
     ...(o ? [] : [{ k: 'client', label: 'Client', list: db.clients.map((c) => c.name) }, { k: 'clientPO', label: 'N° bon de commande client (facultatif)' }]),
     { k: 'date', label: 'Date de facture', type: 'date', value: today }, { k: 'due', label: 'Échéance', type: 'date', value: addDays(today, G.dueDays) },
@@ -334,13 +347,68 @@ async function newInvoice(o, bl) {
   if (!o) { if (!r.client.trim()) return toast('Indiquez le client.', true); client = clientSnap(await ensureClient(D, r.client)); }
   if (!CO.mf && !confirm('Le matricule fiscal de votre société n’est pas renseigné (Paramètres › Société & factures). Créer la facture quand même ?')) return;
   const inv = { date: r.date, due: r.due, orderId: o ? o.id : '', orderNumber: o ? o.number : '', clientPO: o ? o.clientPO || '' : r.clientPO.trim(), blIds, blNumbers: blIds.map((id) => db.bls.find((b) => b.id === id).number), client,
-    lines: L.map((l) => ({ ...l, qty: +l.qty, pu: r3(+l.pu), remise: +l.remise || 0 })), tva: EXP ? 0 : +r.lines.tva, timbre: EXP ? 0 : +r.lines.timbre, pricesTTC: EXP ? false : r.lines.pricesTTC, advance: 0, payments: [], paymentMode: r.paymentMode, note: r.note.trim(), status: 'validee',
+    lines: L.map((l) => ({ ...l, qty: +l.qty, pu: r3(+l.pu), remise: +l.remise || 0 })), tva: EXP ? 0 : +r.lines.tva, timbre: EXP ? 0 : +r.lines.timbre, fodec: EXP ? 0 : +G.fodec || 0, pricesTTC: EXP ? false : r.lines.pricesTTC, advance: 0, payments: [], paymentMode: r.paymentMode, note: r.note.trim(), status: 'validee',
     ...(EXP ? { currency: r00.kind, export: true, incoterm: r.incoterm || '' } : {}), ...(r.ttnRef.trim() ? { ttnRef: r.ttnRef.trim() } : {}) };
   inv.advance = EXP ? 0 : r3(Math.min(Math.max(0, +r.advance || 0), advLeft || (o ? 0 : 0), invoiceTotals(inv).net));
   inv.number = await nextNumber(D, cat, 'invoice', r.date);
   const saved = await put('invoices', inv);
   tab = 'invoices'; selId = saved.id; render(); toast(`Facture ${saved.number} créée.`);
-  busy('Préparation de la facture…'); const bytes = await buildInvoice(CO, saved); busy(false); await D.docs.save('factures', `${saved.number} - ${client.name}`, bytes);
+  await pdfFacture(saved);
+}
+
+
+/* ------------------------------------------------------------------ ERP 0.9.1 : modification des lignes, impression DIGITAL-TEX */
+// Facture modifiable tant qu'elle n'est pas réglée (ni avance encaissée après coup, ni règlement, ni avoir, ni réf. TTN). Le serveur contrôle aussi.
+const invEditable = (i) => i && i.status !== 'annulee' && !(i.payments || []).length && !i.ttnRef;
+const blEditable = (b) => b && b.status !== 'annule' && !db.invoices.some((i) => i.status !== 'annulee' && (i.blIds || []).includes(b.id));
+const codeClient = (c) => { const x = db.clients.find((y) => y.id === (c && c.id)); return (x && (x.code || '')) || ''; };
+async function pdfFacture(i) {
+  busy('Préparation de la facture…');
+  try { const bytes = await buildDocDT(dataFacture(i, { clientCode: codeClient(i.client) })); busy(false); await D.docs.save('factures', `${i.number} - ${i.client.name}`, bytes); }
+  finally { busy(false); }
+}
+async function pdfBL(b) {
+  busy('Préparation du BL…');
+  try { const o = db.orders.find((x) => x.id === b.orderId); const bytes = await buildDocDT(dataBL(b, o, G, { clientCode: codeClient(b.client) })); busy(false); await D.docs.save('bl', `${b.number} - ${b.client.name}`, bytes); }
+  finally { busy(false); }
+}
+// quantités par taille d'une ligne de facture issue de la commande (plafond : commandé − facturé sur les autres factures)
+function capsFor(inv) {
+  const o = inv.orderId && db.orders.find((x) => x.id === inv.orderId); if (!o) return null;
+  const other = invoicedLines(db, o, inv.id), cap = {};
+  for (const l of o.lines) cap[l.id] = { max: Math.max(0, (+l.qty || 0) - (other[l.id] || 0)), label: [l.size, l.color].filter(Boolean).join(' · ') || l.designation };
+  for (const l of inv.lines || []) for (const id of l.lineIds || []) if (!cap[id]) cap[id] = { max: +(l.qtyBy || {})[id] || 0, label: id.split('|').pop() };
+  return cap;
+}
+async function editInvoice(i0) {
+  const i = db.invoices.find((x) => x.id === i0.id) || i0;
+  if (!invEditable(i)) return toast('Cette facture est réglée (règlement ou avoir) : établissez un avoir.', true);
+  const cap = capsFor(i) || {};
+  const x0 = { lines: JSON.parse(JSON.stringify(i.lines || [])), tva: +i.tva || 0, timbre: +i.timbre || 0, fodec: +i.fodec || 0, pricesTTC: i.pricesTTC !== false, locked: true, caps: cap };
+  const r = await ask({ title: `Modifier la facture ${i.number}`, wide: true, okLabel: 'Enregistrer les modifications',
+    text: 'Vous pouvez corriger la désignation, la quantité, le prix et la remise, ou supprimer une ligne. Le numéro, la date, le client et les taux ne changent pas. Chaque modification est tracée (journal d’audit). Une facture réglée se corrige par un avoir.',
+    fields: [{ k: 'lines', type: 'invlines', value: x0 }] });
+  if (!r) return;
+  const L = r.lines.lines.filter((l) => +l.qty > 0);
+  if (!L.length) return toast('Une facture garde au moins une ligne : pour tout retirer, annulez la facture.', true);
+  if (L.some((l) => !String(l.designation).trim())) return toast('Chaque ligne doit avoir une désignation.', true);
+  const rec = { ...i, lines: L.map((l) => {
+    const y = { ...l, qty: +l.qty, pu: r3(+l.pu), remise: Math.min(100, Math.max(0, +l.remise || 0)) };
+    if ((l.lineIds || []).length === 1) y.qtyBy = { [l.lineIds[0]]: y.qty }; // une seule taille : la quantité saisie est celle de la taille
+    if ((l.lineIds || []).length > 1) { // libellé « (M×6, L×4) » remis à jour
+      const o = db.orders.find((z) => z.id === i.orderId), sz = (l.lineIds || []).map((id) => [o && (o.lines.find((z) => z.id === id) || {}).size, +y.qtyBy[id] || 0]).filter(([a, q]) => a && q > 0);
+      if (sz.length) y.designation = String(y.designation).replace(/\s*\([^()]*×[^()]*\)\s*$/, '') + ` (${sz.map(([a, q]) => `${a}×${q}`).join(', ')})`;
+      y.lineIds = l.lineIds.filter((id) => +y.qtyBy[id] > 0); y.qtyBy = Object.fromEntries(y.lineIds.map((id) => [id, +l.qtyBy[id]]));
+    }
+    return y;
+  }) };
+  rec.advance = r3(Math.min(+i.advance || 0, invoiceTotals(rec).net));
+  try { await put('invoices', rec); }
+  catch (e) {
+    if (/vente à perte/i.test(e.message) && confirm(e.message + '\n\nConfirmer la vente à perte ?')) await put('invoices', { ...rec, confirmer_perte: true });
+    else throw e;
+  }
+  render(true); toast(`Facture ${i.number} modifiée.`);
 }
 
 /* ------------------------------------------------------------------ fenêtre de saisie */
@@ -348,7 +416,7 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
   return new Promise((resolve) => {
     const dlg = $('#dlg'), v = {};
     for (const f of fields) v[f.k] = f.type === 'table' ? Object.fromEntries(f.rows.map((r) => [r.id, r.max])) : f.type === 'invlines' ? JSON.parse(JSON.stringify(f.value)) : f.type === 'check' ? false : (f.value ?? '');
-    const invT = (x) => { const X = invoiceTotals(x); return `<div class="tot sm"><div><span>Total HT</span><b>${M(X.ht)}</b></div><div><span>TVA</span><b>${M(X.tva)}</b></div><div><span>Total TTC</span><b>${M(X.ttc)}</b></div><div><span>Timbre</span><b>${M(X.timbre)}</b></div><div class="big"><span>Net à payer</span><b>${M(X.net)}</b></div></div>`; };
+    const invT = (x) => { const X = invoiceTotals(x); return `<div class="tot sm"><div><span>Total HT</span><b>${M(X.ht)}</b></div>${X.fodec ? `<div><span>FODEC ${+x.fodec} %</span><b>${M(X.fodec)}</b></div>` : ''}<div><span>TVA</span><b>${M(X.tva)}</b></div><div><span>Total TTC</span><b>${M(X.ttc)}</b></div><div><span>Timbre</span><b>${M(X.timbre)}</b></div><div class="big"><span>Net à payer</span><b>${M(X.net)}</b></div></div>`; };
     const field = (f) => {
       if (f.type === 'select') return `<label>${esc(f.label)}<select data-k="${f.k}">${f.options.map(([k, l]) => `<option value="${esc(k)}" ${k === v[f.k] ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
       if (f.type === 'date') return `<label>${esc(f.label)}<input data-date data-k="${f.k}" value="${esc(v[f.k])}" ${f.k === 'date' ? 'required' : ''}></label>`;
@@ -356,8 +424,8 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
       if (f.type === 'table') return `<div class="w2"><table class="t ed"><thead><tr><th>Ligne</th><th class="n">Reste</th><th class="n">À livrer</th></tr></thead><tbody>${f.rows.map((r) => `<tr><td>${esc(r.label)}</td><td class="n mute">${r.max}</td><td class="n"><input type="number" min="0" max="${r.max}" step="1" data-tk="${f.k}" data-id="${esc(r.id)}" value="${v[f.k][r.id]}"></td></tr>`).join('')}</tbody></table>
         <div class="row"><button type="button" class="btn sm ghost" data-all="${f.k}">Tout livrer</button><button type="button" class="btn sm ghost" data-none="${f.k}">Tout à zéro</button></div></div>`;
       if (f.type === 'invlines') { const x = v[f.k];
-        return `<div class="w2"><table class="t ed"><thead><tr><th>Désignation</th><th class="n">Qté</th><th class="n">P.U. ${x.pricesTTC ? 'TTC' : 'HT'}</th><th class="n">Remise %</th><th></th></tr></thead><tbody>${x.lines.map((l, i) => `<tr><td><input data-il="${i}" data-c="designation" value="${esc(l.designation)}"></td><td class="n"><input type="number" min="0" step="1" data-il="${i}" data-c="qty" value="${l.qty}"></td><td class="n"><input type="number" min="0" step="0.001" data-il="${i}" data-c="pu" value="${l.pu}"></td><td class="n"><input type="number" min="0" max="100" step="1" data-il="${i}" data-c="remise" value="${l.remise || 0}"></td><td><button type="button" class="ib" data-ildel="${i}">✕</button></td></tr>`).join('')}</tbody></table>
-          <div class="row"><button type="button" class="btn sm ghost" data-iladd>+ Ligne</button>${ART.length ? `<select data-ilart class="inl"><option value="">+ Article…</option>${ART.map((a) => `<option value="${a.id}">${esc(a.code + ' · ' + a.designation)}</option>`).join('')}</select>` : ''}<label class="inl">Prix saisis<select data-ix="pricesTTC"><option value="1" ${x.pricesTTC ? 'selected' : ''}>TTC</option><option value="0" ${x.pricesTTC ? '' : 'selected'}>HT</option></select></label><label class="inl">TVA %<input type="number" step="0.5" min="0" data-ix="tva" value="${x.tva}"></label><label class="inl">Timbre DT<input type="number" step="0.1" min="0" data-ix="timbre" value="${x.timbre}"></label></div>
+        return `<div class="w2"><table class="t ed"><thead><tr><th>Désignation</th><th class="n">Qté</th><th class="n">P.U. ${x.pricesTTC ? 'TTC' : 'HT'}</th><th class="n">Remise %</th><th></th></tr></thead><tbody>${x.lines.map((l, i) => `<tr><td><input data-il="${i}" data-c="designation" value="${esc(l.designation)}"></td><td class="n">${l.qtyBy && Object.keys(l.qtyBy).length > 1 ? `<button type="button" class="btn sm ghost" data-ilsz="${i}" title="Quantités par taille">${l.qty} ✎</button>` : `<input type="number" min="0" step="1" data-il="${i}" data-c="qty" value="${l.qty}">`}</td><td class="n"><input type="number" min="0" step="0.001" data-il="${i}" data-c="pu" value="${l.pu}"></td><td class="n"><input type="number" min="0" max="100" step="1" data-il="${i}" data-c="remise" value="${l.remise || 0}"></td><td><button type="button" class="ib" data-ildel="${i}">✕</button></td></tr>`).join('')}</tbody></table>
+          <div class="row">${x.locked ? '<span class="hint">Taux, timbre et mode de prix de la facture émise : inchangés.</span>' : `<button type="button" class="btn sm ghost" data-iladd>+ Ligne</button>${ART.length ? `<select data-ilart class="inl"><option value="">+ Article…</option>${ART.map((a) => `<option value="${a.id}">${esc(a.code + ' · ' + a.designation)}</option>`).join('')}</select>` : ''}<label class="inl">Prix saisis<select data-ix="pricesTTC"><option value="1" ${x.pricesTTC ? 'selected' : ''}>TTC</option><option value="0" ${x.pricesTTC ? '' : 'selected'}>HT</option></select></label><label class="inl">TVA %<input type="number" step="0.5" min="0" data-ix="tva" value="${x.tva}"></label><label class="inl">Timbre DT<input type="number" step="0.1" min="0" data-ix="timbre" value="${x.timbre}"></label>`}</div>
           <div data-invtot>${invT(x)}</div></div>`; }
       return `<label class="${f.list ? 'w2' : ''}">${esc(f.label)}<input data-k="${f.k}" type="${f.type === 'number' ? 'number' : 'text'}" ${f.type === 'number' ? 'step="0.001" min="0"' : ''} value="${esc(v[f.k])}" placeholder="${esc(f.placeholder || '')}" ${f.list ? `list="dl-${f.k}"` : ''} autocomplete="off">${f.list ? `<datalist id="dl-${f.k}">${f.list.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>` : ''}</label>`;
     };
@@ -383,7 +451,18 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
       else if (b.dataset.all) { const f = fields.find((x) => x.k === b.dataset.all); for (const r of f.rows) v[f.k][r.id] = r.max; draw(); }
       else if (b.dataset.none) { const f = fields.find((x) => x.k === b.dataset.none); for (const r of f.rows) v[f.k][r.id] = 0; draw(); }
       else if (b.hasAttribute('data-iladd')) { v[inv().k].lines.push({ designation: '', qty: 1, pu: 0, remise: 0 }); draw(); }
-      else if (b.dataset.ildel !== undefined) { v[inv().k].lines.splice(+b.dataset.ildel, 1); draw(); } };
+      else if (b.dataset.ildel !== undefined) { v[inv().k].lines.splice(+b.dataset.ildel, 1); draw(); }
+      else if (b.dataset.ilsz !== undefined) { // 0.9.1 : quantités par taille d'une ligne regroupée (plafond : reste à facturer de la commande)
+        const x = v[inv().k], l = x.lines[+b.dataset.ilsz], caps = x.caps || {};
+        for (const id of l.lineIds || []) {
+          const c = caps[id] || { max: Infinity, label: id }, cur = +(l.qtyBy || {})[id] || 0;
+          const a = prompt(`${l.designation}\nQuantité pour « ${c.label} »${Number.isFinite(c.max) ? ` (au plus ${c.max})` : ''} :`, String(cur));
+          if (a === null) break;
+          const q = Math.max(0, Math.floor(+a || 0)); if (q > c.max) { alert(`${c.max} au plus pour « ${c.label} ».`); continue; }
+          l.qtyBy[id] = q;
+        }
+        l.qty = Object.values(l.qtyBy || {}).reduce((s2, q) => s2 + (+q || 0), 0); draw();
+      } };
     dlg.onsubmit = (e) => { e.preventDefault(); done(JSON.parse(JSON.stringify(v))); };
     window.addEventListener('keydown', ek);
     dlg.hidden = false; draw();

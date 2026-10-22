@@ -231,7 +231,7 @@ ECRANS.proformas = (m) => ecranDevisPro(m, 'proformas');
 ECRANS.avoirs = async (m) => {
   if (exigeVis(m, 'Avoirs', ['prix'])) return;
   const [L, G] = await Promise.all([api('GET', '/api/ventes/avoirs'), gestion(true)]);
-  const cree = peut('commercial.avoirs', 'creer'), ann = peut('commercial.avoirs', 'annuler');
+  const cree = peut('commercial.avoirs', 'creer'), ann = peut('commercial.avoirs', 'annuler'), modA = peut('commercial.avoirs', 'modifier');
   m.innerHTML = entete('Avoirs', 'Une facture émise ne se supprime jamais : on la corrige par un avoir (AV), partiel (quelques lignes, quelques pièces) ou total. L’avoir est imputé sur le reste dû de la facture ; s’il dépasse, le surplus est « à rembourser ».',
     `<div class="row-f">${rechercheHtml('Client, n° d’avoir ou de facture…')}${cree ? '<button class="btn cta" data-a="nouveau">+ Avoir</button>' : ''}</div>`) +
     `<div class="chiffres"><div class="chiffre"><b>${L.filter((a) => a.statut === 'emis').length}</b><span>avoir(s) émis</span></div>
@@ -244,7 +244,7 @@ ECRANS.avoirs = async (m) => {
     $('#liste').innerHTML = l.length ? `<table class="nombres"><thead><tr><th>N°</th><th>Date</th><th>Client</th><th>Facture</th><th>Motif</th><th class="n">Net</th><th class="n">À rembourser</th><th>État</th><th></th></tr></thead><tbody>
       ${l.map((a) => `<tr><td class="mono small"><b>${esc(a.numero)}</b></td><td>${jour(a.date)}</td><td>${esc(a.client?.name || '')}</td><td class="mono small">${esc(a.facture_num || '')}</td><td class="small">${esc(a.motif || '')}</td>
         <td class="n"><b>${md(a.net, a.devise)}</b></td><td class="n ${a.a_rembourser > 0 && a.statut === 'emis' ? 'rouge' : ''}">${a.a_rembourser > 0 ? md(a.a_rembourser, a.devise) : '—'}</td><td>${badgeV('avoirs', a)}</td>
-        <td><div class="actions"><button class="btn ghost sm" data-a="imprimer" data-id="${a.id}">Imprimer</button>${a.statut === 'emis' && ann ? `<button class="btn ghost sm" data-a="annuler" data-id="${a.id}">Annuler</button>` : ''}</div></td></tr>`).join('')}</tbody></table>`
+        <td><div class="actions"><button class="btn ghost sm" data-a="imprimer" data-id="${a.id}">Imprimer</button>${a.statut === 'emis' && modA ? `<button class="btn ghost sm" data-a="modifier" data-id="${a.id}">Modifier</button>` : ''}${a.statut === 'emis' && ann ? `<button class="btn ghost sm" data-a="annuler" data-id="${a.id}">Annuler</button>` : ''}</div></td></tr>`).join('')}</tbody></table>`
       : `<div class="vide">${L.length ? 'Aucun avoir pour cette recherche.' : 'Aucun avoir pour l’instant.'}</div>`;
   };
   $('#recherche').oninput = dess; dess();
@@ -261,8 +261,44 @@ ECRANS.avoirs = async (m) => {
       return;
     }
     if (b.dataset.a === 'nouveau') return nouvelAvoir(G);
+    if (b.dataset.a === 'modifier') return modifierAvoir(a);
   };
 };
+
+// 0.9.1 : modifier les lignes d'un avoir émis (quantités, prix pour une erreur de prix, suppression de ligne).
+// Le serveur recalcule le montant, refait l'imputation sur la facture et trace la modification ; verrou 30 min.
+async function modifierAvoir(a) {
+  let C;
+  try { await api('POST', `/api/verrous/avoir/${a.id}`); C = await api('GET', `/api/ventes/factures/${encodeURIComponent(a.facture_id)}/creditable?sauf=${a.id}`); }
+  catch (x) { toast(x.message, true); return; }
+  const cur = Object.fromEntries((a.lignes || []).map((l) => [l.index, l]));
+  grandeFenetre(`<h3>Modifier l’avoir ${esc(a.numero)} · facture ${esc(a.facture_num)}</h3><div class="msg err" hidden role="alert"></div>
+    <p class="mute small">Quantité à 0 = ligne retirée de l’avoir. Le prix peut être baissé (erreur de prix), jamais au-dessus du prix facturé. L’imputation sur la facture est recalculée.</p>
+    <div class="champ"><label for="am-m">Motif *</label><input id="am-m" name="motif" required maxlength="300" value="${esc(a.motif || '')}"></div>
+    <div class="panneau" style="padding:6px 10px;margin-bottom:10px;overflow:auto"><table class="nombres"><thead><tr><th>Désignation</th><th class="n">Facturé</th><th class="n">Créditable</th><th class="n">P.U. facturé ${C.prix_ttc ? 'TTC' : 'HT'}</th><th class="n">P.U. avoir</th><th class="n">Qté avoir</th><th></th></tr></thead><tbody>
+      ${C.lignes.map((l) => `<tr><td>${esc(l.designation)}</td><td class="n">${l.qte}</td><td class="n">${l.creditable}</td><td class="n">${md(l.pu, C.devise)}</td>
+        <td class="n"><input data-pu="${l.index}" type="number" step="any" min="0" max="${l.pu}" value="${cur[l.index] ? cur[l.index].pu : l.pu}" style="width:90px" ${l.creditable <= 0 ? 'disabled' : ''}></td>
+        <td class="n"><input data-q="${l.index}" type="number" step="any" min="0" max="${l.creditable}" value="${cur[l.index] ? cur[l.index].qte : 0}" style="width:80px" ${l.creditable <= 0 ? 'disabled' : ''}></td>
+        <td>${cur[l.index] ? `<button type="button" class="btn ghost sm" data-raz="${l.index}" title="Retirer la ligne de l’avoir">✕</button>` : ''}</td></tr>`).join('')}</tbody></table>
+      <div class="small" id="am-tot" style="padding:8px 0;text-align:right"></div></div>
+    <div class="champ"><label for="am-n">Note</label><input id="am-n" name="note" maxlength="1000" value="${esc(a.note || '')}"></div>
+    <div class="pied"><button class="btn ghost" value="annuler" formnovalidate>Annuler</button><button class="btn" value="ok">Enregistrer</button></div>`, async (f) => {
+    const lignes = [...f.querySelectorAll('[data-q]')].map((i) => ({ index: +i.dataset.q, qte: +i.value || 0, pu: +f.querySelector(`[data-pu="${i.dataset.q}"]`).value || 0 })).filter((l) => l.qte > 0);
+    if (!lignes.length) throw new Error('Un avoir garde au moins une ligne : pour tout retirer, annulez l’avoir.');
+    const r = await api('PUT', `/api/ventes/avoirs/${a.id}`, { version: a.version, motif: f.motif.value.trim(), note: f.note.value.trim(), lignes });
+    GEST = null; versCadres({ type: 'rafraichir' });
+    toast(`Avoir ${r.numero} modifié (${md(r.net, r.devise)})${r.a_rembourser > 0 ? ` — ${md(r.a_rembourser, r.devise)} à rembourser` : ''}.`); route(); return true;
+  });
+  const fen = $('#fen'), z = $('#fen-form');
+  fen.addEventListener('close', () => api('DELETE', `/api/verrous/avoir/${a.id}`).catch(() => {}), { once: true });
+  const calc = () => {
+    let s = 0; z.querySelectorAll('[data-q]').forEach((i) => { const l = C.lignes.find((x) => x.index === +i.dataset.q); s += (+i.value || 0) * (+z.querySelector(`[data-pu="${i.dataset.q}"]`).value || 0) * (1 - (l.remise || 0) / 100); });
+    $('#am-tot').innerHTML = `Montant ${C.prix_ttc ? 'TTC' : 'HT'} des lignes : <b>${md(s, C.devise)}</b> (montant exact, FODEC et TVA calculés par le serveur)`;
+  };
+  z.addEventListener('input', calc);
+  z.addEventListener('click', (e) => { const b = e.target.closest('[data-raz]'); if (b) { z.querySelector(`[data-q="${b.dataset.raz}"]`).value = 0; calc(); } });
+  calc();
+}
 
 function nouvelAvoir(G) {
   const facs = (G.invoices || []).filter((f) => f.status !== 'annulee' && f.number).sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -385,25 +421,24 @@ function tableColis(colis, L) {
     ${colis.map((c) => `<tr><td>${esc(c.colis)}</td><td>${esc(c.contenu)}</td><td class="n">${c.quantite}</td><td class="n">${(+c.poids_net || 0).toFixed(3)}</td><td class="n">${(+c.poids_brut || 0).toFixed(3)}</td><td>${esc(c.dimensions || '')}</td></tr>`).join('')}
     <tr><th>${L.totaux}</th><th>${colis.length} ${L.colis.toLowerCase()}(s)</th><th class="n">${s('quantite')}</th><th class="n">${s('poids_net').toFixed(3)}</th><th class="n">${s('poids_brut').toFixed(3)}</th><th></th></tr></tbody></table>`;
 }
+// 0.9.1 : devis, proformas et avoirs imprimés au format DIGITAL-TEX (même gabarit que les factures et BL de la Gestion).
+// La liste de colisage (export) garde sa mise en page propre (imprimerColisage).
 async function imprimerVente(type, d) {
   try {
-    const soc = await api('GET', '/api/parametres/societe');
-    const lang = d.langue === 'en' ? 'en' : 'fr', L = LIB_V[lang], dev = d.devise, exp = d.type_client === 'export';
-    const nb = (v) => md(v, dev);
-    const lignes = (d.lignes || []).map((l) => `<tr><td class="small">${esc(l.produit || '')}</td><td>${esc(l.designation)}</td><td>${esc(l.couleur || '')}</td><td>${esc(l.taille || '')}</td><td class="n">${l.qte}</td><td class="n">${nb(l.pu)}</td><td class="n">${l.remise ? l.remise + ' %' : ''}</td><td class="n">${nb(l.total_ht ?? 0)}</td></tr>`).join('');
-    const corps = `<div class="t">${socHtml(soc, L)}<div style="text-align:right"><h1>${L[type]}</h1><div>${L.no} <b>${esc(d.numero)}</b></div><div>${L.date} : ${jour(d.date)}</div>
-      ${d.validite && type !== 'avoirs' ? `<div>${L.validite} : ${jour(d.validite)}</div>` : ''}${['annule', 'annulee'].includes(d.statut) ? `<div class="ann">${L.annule}</div>` : ''}</div></div>
-      <div class="t">${cliHtml(d.client, L)}<div class="box" style="min-width:40%">${d.ref_client ? `${L.ref} : <b>${esc(d.ref_client)}</b><br>` : ''}${type === 'avoirs' ? `${L.facture} : <b>${esc(d.facture_num || '')}</b><br>${L.motif} : ${esc(d.motif || '')}<br>` : ''}
-        ${L.dev} : <b>${esc(dev)}</b>${exp && d.incoterm ? `<br>${L.inc} : <b>${esc(d.incoterm)}${d.lieu_incoterm ? ' ' + esc(d.lieu_incoterm) : ''}</b> (Incoterms® 2020)` : ''}</div></div>
-      <table><thead><tr><th>${L.art}</th><th>${L.des}</th><th>${L.coul}</th><th>${L.tai}</th><th class="n">${L.qte}</th><th class="n">${L.pu} ${d.prix_ttc ? 'TTC' : 'HT'}</th><th class="n">${L.rem}</th><th class="n">${L.tot}</th></tr></thead><tbody>${lignes}</tbody></table>
-      <table class="tot"><tr><td>${L.ht}</td><td class="n">${nb(d.ht)}</td></tr><tr><td>${L.tva} ${d.tva} %</td><td class="n">${nb(d.montant_tva)}</td></tr>${d.timbre ? `<tr><td>Timbre</td><td class="n">${nb(d.timbre)}</td></tr>` : ''}
-        <tr class="g"><td>${type === 'avoirs' ? L.netAv : L.net}</td><td class="n">${nb(d.net)}</td></tr></table>
-      ${exp ? `<p><b>${L.exp}</b></p>` : ''}${d.conditions ? `<p>${L.cond} : ${esc(d.conditions)}</p>` : ''}${d.note ? `<p>${L.note} : ${esc(d.note)}</p>` : ''}
-      ${soc.rib ? `<p class="m">${L.banque} : ${esc(soc.banque || '')} · ${L.rib} : ${esc(soc.rib)}</p>` : ''}${soc.mentions && type === 'avoirs' ? `<p class="m">${esc(soc.mentions)}</p>` : ''}
-      <div class="sig"><div>${L.sig}</div></div>
-      ${(d.colisage || []).length ? `<div class="saut"></div><div class="t">${socHtml(soc, L)}<div style="text-align:right"><h1>${L.pl}</h1><div>${L[type]} ${esc(d.numero)}</div></div></div>${tableColis(d.colisage, L)}` : ''}`;
-    fenetreImp(`${L[type]} ${d.numero}`, corps, lang);
+    if (!window.DocsDT) throw new Error('Module d’impression non chargé : rechargez la page (Ctrl+F5).');
+    const soc = await api('GET', '/api/parametres/societe').catch(() => ({}));
+    const G = await gestion().catch(() => null);
+    const cl = G && (G.clients || []).find((c) => c.id === d.client_id);
+    const bytes = await window.DocsDT.buildDocDT(window.DocsDT.dataVente(type, d, { clientCode: (cl && cl.code) || '', societe: soc }));
+    ouvrirPdfDT(`${d.numero}.pdf`, bytes);
+    if ((d.colisage || []).length) await imprimerColisage({ number: d.numero, date: d.date, incoterm: d.incoterm, client: d.client }, d.colisage, d.langue === 'en' ? 'en' : 'fr');
   } catch (x) { toast(x.message, true); }
+}
+function ouvrirPdfDT(nom, bytes) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  const w = window.open(url, '_blank');
+  if (!w) { const a = document.createElement('a'); a.href = url; a.download = nom; document.body.appendChild(a); a.click(); a.remove(); }
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
 }
 async function imprimerColisage(f, colis, lang) {
   if (!colis.length) return toast('Saisissez d’abord le colisage de cette facture.', true);

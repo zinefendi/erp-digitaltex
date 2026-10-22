@@ -10,7 +10,7 @@ const BAIL_MIN = 30;
 /** Totaux d'un document de vente au format facture (lib/calculs.totauxFacture). */
 function totaux(doc) {
   const t = C.totauxFacture({
-    tva: doc.tva, timbre: doc.timbre, pricesTTC: doc.prix_ttc,
+    tva: doc.tva, fodec: doc.fodec, timbre: doc.timbre, pricesTTC: doc.prix_ttc,
     lines: (doc.lignes || []).map((l) => ({ qty: l.qte, pu: l.pu, remise: l.remise, service: l.service })),
   });
   return { ...t, lignes: (doc.lignes || []).map((l, i) => ({ ...l, total_ht: t.lignes[i].totHT })) };
@@ -18,9 +18,9 @@ function totaux(doc) {
 
 /** Prix unitaire HT en dinars d'une ligne (après remise), pour la comparer au prix de revient (PRI, en DT).
  *  Devise : prix × taux de change mémorisé ; sans taux, le contrôle est impossible → null. */
-function puHtDinars(l, { ttc, tva, devise, taux }) {
+function puHtDinars(l, { ttc, tva, fodec, devise, taux }) {
   const pu = (+l.pu || 0) * (1 - Math.min(100, Math.max(0, +l.remise || 0)) / 100);
-  const ht = ttc ? pu / (1 + (+tva || 0) / 100) : pu;
+  const ht = ttc ? pu / (1 + (+tva || 0) / 100) / (l.service ? 1 : 1 + (+fodec || 0) / 100) : pu;
   if (!devise || devise === 'DT') return ht;
   return taux > 0 ? ht * taux : null;
 }
