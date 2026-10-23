@@ -71,21 +71,21 @@ begin
     if p.bom <> '[]'::jsonb then
       insert into pf.boms (produit_id, version, statut, origine, note) values (p.id, 1, 'active', 'migration', 'Reprise de la BOM saisie avant la 0.11.0') returning id into b;
       insert into pf.bom_lignes (bom_id, article_id, designation, unite, qte_base, par_taille, pu, ordre)
-        select b, f.id, coalesce(l.l->>'designation', ''), coalesce(f.donnees->>'unite', ''),
-               coalesce((l.l->>'qte')::numeric, 0), '{}'::jsonb, coalesce((l.l->>'pu')::numeric, 0), l.ord
+        select b, f.id, coalesce(l->>'designation', ''), coalesce(f.donnees->>'unite', ''),
+               coalesce((l->>'qte')::numeric, 0), '{}'::jsonb, coalesce((l->>'pu')::numeric, 0), ord
         from jsonb_array_elements(p.bom) with ordinality as t(l, ord)
         left join lateral (
           select f2.id, f2.donnees from registres.fiches f2
           where f2.registre = 'articles_mp'
-            and ((l.l->>'matiere' is not null and l.l->>'matiere' <> '' and f2.donnees->>'code' = l.l->>'matiere')
-              or (l.l->>'designation' is not null and f2.donnees->>'designation' = l.l->>'designation'))
+            and ((l->>'matiere' is not null and l->>'matiere' <> '' and f2.donnees->>'code' = l->>'matiere')
+              or (l->>'designation' is not null and f2.donnees->>'designation' = l->>'designation'))
           order by f2.id limit 1
         ) f on true;
     end if;
     if p.gamme <> '[]'::jsonb then
       insert into pf.gammes (produit_id, version, statut, origine, note) values (p.id, 1, 'active', 'migration', 'Reprise de la gamme saisie avant la 0.11.0') returning id into g;
       insert into pf.gamme_operations (gamme_id, operation, temps_min, ordre)
-        select g, coalesce(l.l->>'operation', ''), coalesce((l.l->>'temps_min')::numeric, 0), l.ord
+        select g, coalesce(l->>'operation', ''), coalesce((l->>'temps_min')::numeric, 0), ord
         from jsonb_array_elements(p.gamme) with ordinality as t(l, ord);
     end if;
   end loop;
