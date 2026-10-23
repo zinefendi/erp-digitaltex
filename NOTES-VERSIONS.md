@@ -90,3 +90,13 @@ Demandes de l'utilisateur du 22/10/2026 (module 02).
 - **Règlements et avances** : n° de document (chèque, effet, virement), banque (liste BCT 2026 : 25 établissements + Autre), échéance, **scan** (photo ou PDF, appareil photo sur tablette/téléphone).
 - **Nouvel écran Commercial › Moyens de paiement** : recherche par client, type, mode, banque, n° de document, dates, échéance, montants, avec/sans scan ; totaux, export CSV, ouverture du scan.
 - Migration 011 : `parametres.banques`, `commercial.fichiers` (fichiers stockés dans `/data/fichiers`, jamais effacés : retrait tracé au journal d'audit).
+
+## 0.11.0 — 23/10/2026 — Production : OF en 3 parties + BOM versionnée (lot 7, partie web)
+- BOM et gammes versionnées (pf.boms/pf.bom_lignes, pf.gammes/pf.gamme_operations) : modifier crée une nouvelle version, les OF lancés gardent la leur ; les BOM/gammes jsonb existantes sont reprises en version 1 (migration 012). Le PRI du produit est recalculé quand son prix est « calculé ».
+- Ordres de fabrication (schéma prod) : création depuis une commande validée, numéro OF-AAAA-NNNN en transaction, quantités par taille/couleur, fiche technique figée SANS aucun prix ; signal « fiche modifiée » si le produit évolue après lancement.
+- Réservations de matières au lancement de l'OF (stocks.reservations_mp) ; disponible = physique − réservé.
+- 3 parties validées dans l'ordre (coupe → marquage → assemblage et finition), validation partielle possible ; OF sans marquage : partie 2 sans objet. Coupe validée = sorties MP réelles (rouleau/FIFO) + consommation des réservations ; assemblage validé = entrée PF au PRI. Annulation d'une validation par un responsable autorisé avec motif : mouvements inverses dans la même transaction. Tout est tracé à l'audit.
+- Calcul des besoins (commande ou produit) : besoin (perte 9 % incluse) vs stock, « à commander » mis en évidence.
+- Écrans web : Production › Ordres de fabrication + Calcul des besoins ; BOM › Nomenclatures versionnées + Gammes versionnées ; menus Stock mis à jour (entrées OF automatiques, réservations MP).
+- Décisions du 23/10/2026 : lot 7 découpé — tablette PWA + pointage des heures + affectation simple au lot 0.12.0. Photos des validations : envoi prévu avec la tablette (le champ est prêt côté serveur).
+- Tests : 105/105 (11 nouveaux). Prochaine migration : 013.

@@ -22,7 +22,7 @@ function construire(opts = {}) {
     if (err.statusCode && err.statusCode < 500 && err.expose !== false && typeof err.code === 'string' && /^[a-z_]+$/.test(err.code)) {
       return reply.code(err.statusCode).send({ erreur: err.code, message: err.message });
     }
-    req.log.error(err);
+    req.log.error(err); if (process.env.ERP_DEBUG_ERR) console.error('ERREUR_SERVEUR_BRUTE:', err);
     return reply.code(500).send({ erreur: 'serveur', message: 'Erreur du serveur. Si elle se répète, prévenez l’administrateur.' });
   });
   app.setNotFoundHandler((req, reply) => reply.code(404).send({ erreur: 'introuvable', message: 'Adresse inconnue.' }));
@@ -53,6 +53,7 @@ function construire(opts = {}) {
   app.register(require('./lib/routes-produits-finis'));
   app.register(require('./lib/routes-ventes'));
   app.register(require('./lib/routes-stocks'));
+  app.register(require('./lib/routes-prod'));
   app.register(require('./lib/routes-fichiers'));
   return app;
 }

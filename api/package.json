@@ -1,6 +1,6 @@
 {
   "name": "erp-digitaltex-api",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "private": true,
   "description": "API ERP DIGITAL-TEX — ERP UNIFORM STUDIO : comptes, droits, paramètres, infographie, commercial",
   "main": "server.js",

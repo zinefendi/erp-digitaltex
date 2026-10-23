@@ -95,15 +95,15 @@ const MODS = {
     declarations: { t: 'futur', lot: 9, ico: 'shield', d: 'CNSS et déclarations fiscales', cdc: ['États préparatoires (formats exacts à obtenir auprès du comptable et des organismes).'] },
     journal: { t: 'futur', lot: 9, ico: 'chart', d: 'Journal et livre de paie', cdc: ['Journal de paie, livre de paie, état des virements bancaires.'] },
   } },
-  production: { court: 'Production', desc: 'Plan de charge des commandes aujourd’hui ; OF en 3 parties et tablette atelier au lot 7.', f: {
+  production: { court: 'Production', desc: 'OF en 3 parties (0.11.0) : coupe, marquage, assemblage ; affectation et pointage à la tablette au lot 0.12.0.', f: {
     of: { t: 'natif', ecran: 'planCharge', ico: 'list', libelle: 'Plan de charge', d: 'Commandes à produire, délais, retards' },
-    etapes: { t: 'futur', lot: 7, ico: 'check', d: 'Coupe → Marquage → Assemblage', cdc: ['Les 3 parties de l’OF se valident dans l’ordre : coupe, marquage (impression ou broderie), assemblage et finition.', 'Validation partielle possible, avec date, validateur, quantités, remarques et photo prise à la tablette.', 'Coupe validée : sortie des matières du stock ; assemblage validé : entrée en stock produits finis.'] },
-    taches: { t: 'futur', lot: 7, ico: 'user', d: 'Affectation aux ouvriers', cdc: ['Planning visuel, charge par ouvrier, priorités, retards.'] },
-    pointage: { t: 'futur', lot: 7, ico: 'clock', d: 'Temps prévus et réels', cdc: ['Pointage début / fin de tâche depuis la tablette, temps prévu comparé au temps réel, heures transmissibles à la paie.'] },
+    etapes: { t: 'natif', ecran: 'of', ico: 'check', libelle: 'Ordres de fabrication', d: '3 parties : coupe, marquage, assemblage' },
+    taches: { t: 'futur', lot: 12, ico: 'user', d: 'Affectation aux ouvriers', cdc: ['Planning visuel, charge par ouvrier, priorités, retards.', 'Prévu avec la tablette atelier (lot 0.12.0), en version simple d’abord (décision du 23/10/2026).'] },
+    pointage: { t: 'futur', lot: 12, ico: 'clock', d: 'Temps prévus et réels', cdc: ['Pointage début / fin de tâche depuis la tablette (lot 0.12.0), temps prévu (gamme) comparé au temps réel, heures transmissibles à la paie.'] },
   } },
-  bom: { court: 'BOM', desc: 'Les produits du catalogue, base des nomenclatures matières (lot 7).', f: {
-    nomenclatures: { t: 'natif', ecran: 'articles', ico: 'grid', libelle: 'Produits du catalogue', d: 'Un produit du catalogue = une BOM' },
-    gammes: { t: 'futur', lot: 7, ico: 'clock', d: 'Opérations et temps standard', cdc: ['Gamme opératoire : opérations, temps standard, poste ou compétence.', 'Coût de revient standard (matières + main-d’œuvre + marquage) comparé au coût réel de l’OF.'] },
+  bom: { court: 'BOM', desc: 'Nomenclatures et gammes versionnées par produit (0.11.0) ; calcul des besoins.', f: {
+    nomenclatures: { t: 'natif', ecran: 'bomVersions', ico: 'grid', libelle: 'Nomenclatures (BOM)', d: 'Matières par produit, versions datées' },
+    gammes: { t: 'natif', ecran: 'gammeVersions', ico: 'clock', libelle: 'Gammes', d: 'Opérations, temps standard, versions' },
   } },
   stock_mp: { court: 'Stock MP', desc: 'Matières : réceptions par lot et rouleau, sorties, inventaires, valorisation FIFO (0.10.0).', f: {
     articles: { t: 'natif', ecran: 'etatMP', ico: 'box', libelle: 'État du stock', d: 'Physique, réservé, disponible, alertes' },
@@ -115,8 +115,8 @@ const MODS = {
   stock_pf: { court: 'Stock PF', desc: 'Produits finis par référence, taille et couleur ; sortie automatique à la livraison (BL).', f: {
     stock: { t: 'natif', ecran: 'etatPF', ico: 'box', libelle: 'État du stock', d: 'Par produit, taille, couleur' },
     entrees: { t: 'natif', ecran: 'mouvementsPF', ico: 'in', libelle: 'Mouvements', d: 'Entrées, sorties, retours, BL' },
-    sorties: { t: 'futur', lot: 7, ico: 'out', libelle: 'Entrées depuis les OF', d: 'Automatiques au lot 7', cdc: ['Entrée automatique à la validation de l’assemblage de l’OF (lot 7). Les sorties par BL sont déjà automatiques depuis la 0.10.0.'] },
-    reservations: { t: 'futur', lot: 7, ico: 'lock', d: 'Réservations pour les commandes', cdc: ['Réservation pour les commandes et disponibilités (avec les OF, lot 7).'] },
+    sorties: { t: 'natif', ecran: 'mouvementsPF', ico: 'out', libelle: 'Entrées / sorties', d: 'Automatiques : OF (0.11.0) et BL' },
+    reservations: { t: 'natif', ecran: 'etatMP', ico: 'lock', libelle: 'Réservations MP', d: 'Engagé aux OF ; dispo = physique − réservé' },
     inventaires: { t: 'natif', ecran: 'inventaires', stock: 'pf', ico: 'scale', d: 'Comptage, écarts justifiés' },
   } },
   parametres: { court: 'Paramètres', desc: 'Comptes, rôles, société, fiscalité, numérotation, journal et sauvegardes.', f: {
