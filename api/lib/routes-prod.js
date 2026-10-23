@@ -58,9 +58,22 @@ async function detailOF(db, id, { avecPhoto = true } = {}) {
     from prod.of_validations v left join noyau.utilisateurs u on u.id = v.utilisateur left join noyau.utilisateurs a on a.id = v.annule_par
     left join commercial.fichiers f on f.id = v.photo_id
     where v.of_id = $1 order by v.partie, v.horodatage, v.id`, [id])).rows;
+  // 0.12.0 : affectations, pointages (le responsable pointe pour tous) et signalements de l'OF
+  const affectations = (await db.query(`select a.id, a.partie, a.ouvrier_id, v.nom ouvrier, a.note, a.annule, a.annule_motif,
+      to_char(a.cree_le, 'YYYY-MM-DD"T"HH24:MI') cree_le
+    from prod.of_affectations a join prod.ouvriers v on v.id = a.ouvrier_id where a.of_id = $1 order by a.partie, a.cree_le, a.id`, [id])).rows
+    .map((x) => ({ ...x, id: Number(x.id), ouvrier_id: Number(x.ouvrier_id) }));
+  const pointages = (await db.query(`select p.id, p.partie, p.ouvrier_id, v.nom ouvrier, p.debut, p.fin, p.source, p.remarques, p.version, p.annule, p.annule_motif
+    from prod.pointages p join prod.ouvriers v on v.id = p.ouvrier_id where p.of_id = $1 order by p.debut, p.id`, [id])).rows
+    .map((x) => ({ ...x, id: Number(x.id), ouvrier_id: Number(x.ouvrier_id), version: Number(x.version) }));
+  const signalements = (await db.query(`select s.id, s.partie, s.texte, s.etat, s.resolu_note, s.resolu_le,
+      to_char(s.cree_le, 'YYYY-MM-DD"T"HH24:MI') cree_le, coalesce(c.nom_complet, c.identifiant) cree_par_nom
+    from prod.signalements s left join noyau.utilisateurs c on c.id = s.cree_par where s.of_id = $1 order by s.cree_le desc, s.id desc`, [id])).rows
+    .map((x) => ({ ...x, id: Number(x.id) }));
   const ficheModifiee = Number(of.produit_version) !== Number(of.version_produit_actuelle);
   return { ...of, fiche_modifiee: ficheModifiee, id: Number(of.id), produit_id: Number(of.produit_id), bom_version_id: of.bom_version_id ? Number(of.bom_version_id) : null,
-    gamme_version_id: of.gamme_version_id ? Number(of.gamme_version_id) : null, parties, validations: avecPhoto ? vals : vals.map(({ photo_id, photo_nom, ...v }) => v) };
+    gamme_version_id: of.gamme_version_id ? Number(of.gamme_version_id) : null, parties, validations: avecPhoto ? vals : vals.map(({ photo_id, photo_nom, ...v }) => v),
+    affectations, pointages, signalements };
 }
 
 module.exports = async function routesProd(app) {

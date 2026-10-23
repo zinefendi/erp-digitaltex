@@ -95,11 +95,11 @@ const MODS = {
     declarations: { t: 'futur', lot: 9, ico: 'shield', d: 'CNSS et déclarations fiscales', cdc: ['États préparatoires (formats exacts à obtenir auprès du comptable et des organismes).'] },
     journal: { t: 'futur', lot: 9, ico: 'chart', d: 'Journal et livre de paie', cdc: ['Journal de paie, livre de paie, état des virements bancaires.'] },
   } },
-  production: { court: 'Production', desc: 'OF en 3 parties (0.11.0) : coupe, marquage, assemblage ; affectation et pointage à la tablette au lot 0.12.0.', f: {
+  production: { court: 'Production', desc: 'OF en 3 parties (0.11.0), affectation et pointage version simple (0.12.0), BOM et gammes versionnées.', f: {
     of: { t: 'natif', ecran: 'planCharge', ico: 'list', libelle: 'Plan de charge', d: 'Commandes à produire, délais, retards' },
     etapes: { t: 'natif', ecran: 'of', ico: 'check', libelle: 'Ordres de fabrication', d: '3 parties : coupe, marquage, assemblage' },
-    taches: { t: 'futur', lot: 12, ico: 'user', d: 'Affectation aux ouvriers', cdc: ['Planning visuel, charge par ouvrier, priorités, retards.', 'Prévu avec la tablette atelier (lot 0.12.0), en version simple d’abord (décision du 23/10/2026).'] },
-    pointage: { t: 'futur', lot: 12, ico: 'clock', d: 'Temps prévus et réels', cdc: ['Pointage début / fin de tâche depuis la tablette (lot 0.12.0), temps prévu (gamme) comparé au temps réel, heures transmissibles à la paie.'] },
+    taches: { t: 'natif', ecran: 'taches', ico: 'user', libelle: 'Affectation', d: 'Ouvriers affectés aux parties des OF ; ouvriers de l’atelier' },
+    pointage: { t: 'natif', ecran: 'pointage', ico: 'clock', libelle: 'Pointage', d: 'Début / fin des tâches par ouvrier, temps prévu vs réel' },
   } },
   bom: { court: 'BOM', desc: 'Nomenclatures et gammes versionnées par produit (0.11.0) ; calcul des besoins.', f: {
     nomenclatures: { t: 'natif', ecran: 'bomVersions', ico: 'grid', libelle: 'Nomenclatures (BOM)', d: 'Matières par produit, versions datées' },

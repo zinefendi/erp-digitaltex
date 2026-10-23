@@ -11,6 +11,7 @@ const LECTURE_COMPTES = S.exigerConnexion({ droit: ['parametres.utilisateurs', '
 const LECTURE_AUDIT = S.exigerConnexion({ droit: ['parametres.audit', 'lire'] });
 
 const COLONNES = `u.id, u.identifiant, u.nom_complet, u.email, u.actif, u.doit_changer_mdp,
+  u.pin_hash is not null as pin_actif,
   u.verrouille_jusqu > now() as verrouille, u.derniere_connexion, u.cree_le, u.maj_le, u.version,
   array(select ro.code from noyau.utilisateur_roles ur join noyau.roles ro on ro.id = ur.role_id
          where ur.utilisateur_id = u.id order by ro.id) as roles`;
@@ -145,10 +146,33 @@ module.exports = async function routesUtilisateurs(app) {
   });
 
   app.post('/api/utilisateurs/:id/deverrouiller', { preHandler: ADMIN, schema: { params: { type: 'object', properties: { id: { type: 'integer' } } } } }, async (req, reply) => {
-    const r = await pool.query('update noyau.utilisateurs set echecs_connexion = 0, verrouille_jusqu = null where id = $1 returning id', [req.params.id]);
+    const r = await pool.query('update noyau.utilisateurs set echecs_connexion = 0, verrouille_jusqu = null, pin_echecs = 0, pin_verrouille_jusqu = null where id = $1 returning id', [req.params.id]);
     if (!r.rows[0]) return erreur(reply, 404, 'introuvable', 'Utilisateur introuvable.');
     await S.auditer(pool, req, 'utilisateur_deverrouille', { entite: 'utilisateur', entiteId: req.params.id });
     return { ok: true };
+  });
+
+  // Code PIN de la tablette atelier (4 chiffres, haché, jamais renvoyé — CDC §4.6.4). pin = null le retire.
+  app.post('/api/utilisateurs/:id/pin', {
+    preHandler: ADMIN,
+    schema: { params: { type: 'object', properties: { id: { type: 'integer' } } },
+      body: { type: 'object', required: ['pin'], additionalProperties: false,
+        properties: { pin: { type: ['string', 'null'], pattern: '^\\d{4}$', maxLength: 4 } } } },
+  }, async (req, reply) => {
+    const pin = req.body.pin ? String(req.body.pin).trim() : null;
+    if (pin && !/^\d{4}$/.test(pin)) return erreur(reply, 400, 'pin_invalide', 'Le PIN doit être composé de 4 chiffres.');
+    const h = pin ? await mdp.hacher(pin) : null;
+    const r = await transaction(async (c) => {
+      const u = await c.query(
+        `update noyau.utilisateurs set pin_hash = $2, pin_echecs = 0, pin_verrouille_jusqu = null, maj_le = now(), version = version + 1
+          where id = $1 returning id, identifiant`, [req.params.id, h]);
+      if (!u.rows[0]) return null;
+      if (!pin) await c.query('update noyau.sessions set revoquee_le = now() where utilisateur_id = $1 and revoquee_le is null', [req.params.id]);
+      await S.auditer(c, req, pin ? 'pin_defini' : 'pin_retire', { entite: 'utilisateur', entiteId: req.params.id });
+      return u.rows[0];
+    });
+    if (!r) return erreur(reply, 404, 'introuvable', 'Utilisateur introuvable.');
+    return { identifiant: r.identifiant, pin_actif: !!pin };
   });
 
   // Sessions ouvertes d'un compte + fermeture à distance (poste perdu, départ d'un salarié…)

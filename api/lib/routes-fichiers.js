@@ -33,9 +33,13 @@ function mimeDe(b) {
 // droits par nature de fichier
 const peutLire = (eff, nature) => (nature === 'scan_paiement'
   ? D.voit(eff, 'prix') && (D.peut(eff, 'commercial.reglements', 'lire') || D.peut(eff, 'commercial.factures', 'lire') || D.peut(eff, 'compta_clients.lettrage', 'lire'))
+  : nature === 'photo_atelier'
+  ? D.peut(eff, 'production.of', 'lire')
   : D.peut(eff, 'commercial.commandes', 'lire') || D.peut(eff, 'commercial.produits_finis', 'lire') || D.peut(eff, 'commercial.bl', 'lire') || D.peut(eff, 'commercial.factures', 'lire'));
 const peutEcrire = (eff, nature) => (nature === 'scan_paiement'
   ? D.voit(eff, 'prix') && (D.peut(eff, 'commercial.reglements', 'creer') || D.peut(eff, 'commercial.factures', 'modifier') || D.peut(eff, 'compta_clients.lettrage', 'creer'))
+  : nature === 'photo_atelier'
+  ? D.peut(eff, 'production.etapes', 'valider')
   : D.peut(eff, 'commercial.commandes', 'modifier') || D.peut(eff, 'commercial.commandes', 'creer') || D.peut(eff, 'commercial.produits_finis', 'modifier'));
 
 const COLS = `id::int, nature, cible_type, cible_id, nom, mime, taille, to_char(cree_le, 'YYYY-MM-DD"T"HH24:MI:SS') cree_le,
@@ -53,12 +57,14 @@ module.exports = async function routesFichiers(app) {
   app.post('/api/fichiers', {
     preHandler: S.exigerConnexion(), bodyLimit: MAX,
     schema: { querystring: { type: 'object', additionalProperties: false, required: ['nature', 'cible_type'], properties: {
-      nature: { type: 'string', enum: ['scan_paiement', 'fiche_technique'] }, cible_type: { type: 'string', enum: ['commande', 'produit', 'reglement'] },
+      nature: { type: 'string', enum: ['scan_paiement', 'fiche_technique', 'photo_atelier'] }, cible_type: { type: 'string', enum: ['commande', 'produit', 'reglement', 'of'] },
       cible_id: { type: 'string', maxLength: 80 }, commande_slug: { type: 'string', maxLength: 120 }, nom: { type: 'string', maxLength: 160 } } } },
   }, async (req, reply) => {
     const q = req.query, b = req.body;
     if (!peutEcrire(req.droits, q.nature)) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas de joindre ce fichier.');
-    if ((q.nature === 'scan_paiement') !== (q.cible_type === 'reglement')) return erreur(reply, 400, 'cible_invalide', 'Un scan se rattache à un règlement ; une fiche technique à une commande ou à un produit fini.');
+    const paire = { scan_paiement: 'reglement', photo_atelier: 'of', fiche_technique: null }[q.nature];
+    if (paire ? q.cible_type !== paire : ['commande', 'produit'].includes(q.cible_type) === false)
+      return erreur(reply, 400, 'cible_invalide', 'Un scan se rattache à un règlement, une photo d’atelier à un OF, une fiche technique à une commande ou à un produit fini.');
     const mime = mimeDe(b);
     if (!mime) return erreur(reply, 400, 'fichier_invalide', 'Fichier refusé : seuls les PDF, JPEG, PNG et WebP sont acceptés.');
     if (q.nature === 'fiche_technique' && !['application/pdf', 'image/jpeg', 'image/png'].includes(mime)) return erreur(reply, 400, 'fichier_invalide', 'Une fiche technique est un PDF ou une image JPEG / PNG.');
@@ -74,8 +80,10 @@ module.exports = async function routesFichiers(app) {
     } else if (q.cible_type === 'produit') {
       cible = cible.toUpperCase();
       if (!(await pool.query('select 1 from pf.produits where reference = $1', [cible])).rowCount) return erreur(reply, 404, 'produit_introuvable', 'Produit fini introuvable.');
+    } else if (q.cible_type === 'of') {
+      if (!(await pool.query('select 1 from prod.of where id = $1', [cible])).rowCount) return erreur(reply, 404, 'of_introuvable', 'Ordre de fabrication introuvable.');
     }
-    const nom = String(q.nom || `${q.nature === 'scan_paiement' ? 'scan' : 'fiche-technique'}.${EXT[mime]}`).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').slice(0, 160);
+    const nom = String(q.nom || `${q.nature === 'scan_paiement' ? 'scan' : q.nature === 'photo_atelier' ? 'photo-atelier' : 'fiche-technique'}.${EXT[mime]}`).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').slice(0, 160);
     const emp = crypto.createHash('sha256').update(b).digest('hex');
     const sous = new Date().toISOString().slice(0, 7);
     const fichier = `${sous}/${q.nature}-${Date.now().toString(36)}-${crypto.randomBytes(5).toString('hex')}.${EXT[mime]}`;
@@ -94,7 +102,7 @@ module.exports = async function routesFichiers(app) {
   app.get('/api/fichiers', {
     preHandler: S.exigerConnexion(),
     schema: { querystring: { type: 'object', additionalProperties: false, required: ['cible_type'], properties: {
-      cible_type: { type: 'string', enum: ['commande', 'produit', 'reglement'] }, cible_id: { type: 'string', maxLength: 80 }, nature: { type: 'string', enum: ['scan_paiement', 'fiche_technique'] } } } },
+      cible_type: { type: 'string', enum: ['commande', 'produit', 'reglement', 'of'] }, cible_id: { type: 'string', maxLength: 80 }, nature: { type: 'string', enum: ['scan_paiement', 'fiche_technique', 'photo_atelier'] } } } },
   }, async (req) => {
     const q = req.query;
     const r = await pool.query(`select ${COLS} from commercial.fichiers f where not annule and cible_type = $1 and ($2::text is null or cible_id = $2) and ($3::text is null or nature = $3)

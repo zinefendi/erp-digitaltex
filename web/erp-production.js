@@ -258,6 +258,153 @@ async function formBom(p) {
   f.addEventListener('click', (e) => { const d = e.target.closest('[data-del]'); if (!d) return; lire(); lignes.splice(+d.dataset.del, 1); if (!lignes.length) lignes.push({ article_id: '', designation: '', unite: '', qte_base: '', par_taille: {} }); dess(); });
 }
 
+/* ---------------------------------------------------------------- Affectation (version simple) */
+ECRANS.taches = async (m) => {
+  const [OF, ouvriers] = await Promise.all([api('GET', '/api/prod/of?statut=en_cours'), api('GET', '/api/prod/ouvriers')]);
+  m.innerHTML = entete('Affectation', 'Version simple : depuis cet écran, on affecte des <b>ouvriers de l’atelier</b> aux parties de chaque OF en cours. La tablette de l’atelier montre les tâches affectées. Le pointage se fait sur l’écran <b>Pointage</b>.',
+    `<div class="row-f"><div class="champ" style="margin:0"><select id="of"><option value="">— choisir un OF en cours —</option>${OF.map((o) => `<option value="${o.id}">${esc(o.numero)} — ${esc(o.reference)} · ${esc(o.client_nom || '—')} · ${qteF(o.pieces)} pièce(s)</option>`).join('')}</select></div>
+      ${peut('production.taches', 'creer') ? '<button class="btn ghost" data-r="ouvriers">Ouvriers de l’atelier</button>' : ''}</div>`) +
+    `<div id="ta"></div>`;
+  $('#of').onchange = () => chargerAffectations($('#of').value, ouvriers);
+  chargerAffectations($('#of').value, ouvriers);
+  m.onclick = (e) => {
+    const b = e.target.closest('[data-r],[data-aj],[data-ret]'); if (!b) return;
+    if (b.dataset.r === 'ouvriers') return formOuvriers();
+    if (b.dataset.aj) return ajouterAffectation(+b.dataset.aj, ouvriers);
+    if (b.dataset.ret) return retirerAffectation(+b.dataset.ret);
+  };
+};
+
+async function chargerAffectations(id, ouvriers) {
+  const z = $('#ta');
+  if (!id) { z.innerHTML = '<div class="vide">Choisissez un ordre de fabrication en cours.</div>'; return; }
+  const of = await api('GET', `/api/prod/of/${id}`);
+  const affDe = (n) => of.affectations.filter((a) => a.partie === n);
+  const peutGerer = peut('production.taches', 'creer') && of.statut === 'en_cours';
+  z.innerHTML = `<h3 class="titre-bloc">${esc(of.numero)} · ${esc(of.reference)} ${badge(STATUT_OF, of.statut)} — ${esc(of.client_nom || '')}</h3>
+    ${[1, 2, 3].map((n) => {
+      const p = of.parties.find((x) => x.partie === n);
+      const A = affDe(n);
+      return `<div class="panneau" style="margin-bottom:10px"><b>${NOM_PARTIE[n]}</b> ${badge(ETAT_PARTIE, p.etat)}
+        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${A.filter((a) => !a.annule).map((a) => `<span class="badge vig">${esc(a.ouvrier)}${peut('production.taches', 'modifier') ? ` <button class="btn ghost sm" data-ret="${a.id}" title="Retirer" style="padding:0 6px">✕</button>` : ''}</span>`).join('') || '<span class="mute small">Personne n’est affecté à cette partie.</span>'}</div>
+        ${peutGerer && p.etat !== 'sans_objet' && p.etat !== 'validee' ? `<button class="btn ghost sm" data-aj="${n}" style="margin-top:8px">+ Affecter un ouvrier</button>` : ''}</div>`;
+    }).join('')}
+    <h3 class="titre-bloc">Signalements</h3>
+    <div class="panneau">${of.signalements.map((s) => `<p class="small"><b>${jour(s.cree_le)}</b>${s.partie ? ` · ${NOM_PARTIE[s.partie]}` : ''} — ${esc(s.texte)} <span class="mute small">(${esc(s.cree_par_nom || '')})</span> ${s.etat === 'resolu' ? `<span class="badge vig">Résolu${s.resolu_note ? ' : ' + esc(s.resolu_note) : ''}</span>` : '<span class="badge ret">Ouvert</span>'}${peut('production.of', 'modifier') && s.etat === 'ouvert' ? ` <button class="btn ghost sm" data-res="${s.id}">Résoudre</button>` : ''}</p>`).join('') || '<p class="mute small">Aucun signalement.</p>'}</div>`;
+  z.onclick = async (e) => {
+    const b = e.target.closest('[data-ret],[data-res]'); if (!b) return;
+    if (b.dataset.ret) return retirerAffectation(+b.dataset.ret);
+    if (b.dataset.res) return resoudreSignalement(+b.dataset.res);
+  };
+}
+
+async function formOuvriers() {
+  const O = await api('GET', '/api/prod/ouvriers');
+  fenetre(`<h3>Ouvriers de l’atelier</h3><div class="msg err" hidden role="alert"></div>
+    <div style="max-height:40vh;overflow:auto"><table class="nombres"><thead><tr><th>Nom</th><th>Poste</th><th>État</th></tr></thead><tbody>
+      ${O.map((o) => `<tr><td><b>${esc(o.nom)}</b></td><td>${esc(o.poste || '—')}</td><td>${o.actif ? '<span class="badge vig">Actif</span>' : '<span class="badge anc">Désactivé</span>'}</td></tr>`).join('') || '<tr><td colspan="3" class="mute">Aucun ouvrier.</td></tr>'}</tbody></table></div>
+    <div class="row-f" style="margin-top:10px"><div class="champ"><label for="ov-n">Nouvel ouvrier *</label><input id="ov-n" name="nom" minlength="2" maxlength="80" required></div>
+      <div class="champ"><label for="ov-p">Poste</label><input id="ov-p" name="poste" maxlength="80" placeholder="Piqueuse, coupeur…"></div></div>
+    <p class="mute small">Un ouvrier désactivé n’apparaît plus dans les nouvelles affectations ; son historique est conservé.</p>
+    <div class="pied"><button class="btn ghost" value="annuler" formnovalidate>Fermer</button><button class="btn" value="ok">Ajouter l’ouvrier</button></div>`, async (f) => {
+    await api('POST', '/api/prod/ouvriers', { nom: f.nom.value.trim(), poste: f.poste.value.trim() });
+    toast('Ouvrier ajouté.'); route(); return true;
+  });
+}
+
+async function ajouterAffectation(partie, ouvriers) {
+  const actifs = ouvriers.filter((o) => o.actif);
+  if (!actifs.length) return toast('Créez d’abord un ouvrier (bouton « Ouvriers de l’atelier »).', true);
+  fenetre(`<h3>Affecter — ${NOM_PARTIE[partie]}</h3><div class="msg err" hidden role="alert"></div>
+    <div class="champ"><label for="af-o">Ouvrier *</label><select id="af-o" name="ouvrier" required>${actifs.map((o) => `<option value="${o.id}">${esc(o.nom)}${o.poste ? ' · ' + esc(o.poste) : ''}</option>`).join('')}</select></div>
+    <div class="champ"><label for="af-n">Note</label><input id="af-n" name="note" maxlength="200"></div>
+    <div class="pied"><button class="btn ghost" value="annuler" formnovalidate>Annuler</button><button class="btn" value="ok">Affecter</button></div>`, async (f) => {
+    await api('POST', `/api/prod/of/${$('#of').value}/affectations`, { partie, ouvrier_id: +f.ouvrier.value, note: f.note.value.trim() });
+    toast('Ouvrier affecté.'); route(); return true;
+  });
+}
+
+async function retirerAffectation(id) {
+  fenetre(`<h3>Retirer l’affectation</h3><div class="msg err" hidden role="alert"></div>
+    <div class="champ"><label for="af-m">Motif *</label><input id="af-m" name="motif" required minlength="3" maxlength="300"></div>
+    <div class="pied"><button class="btn ghost" value="annuler" formnovalidate>Retour</button><button class="btn danger" value="ok">Retirer</button></div>`, async (f) => {
+    await api('POST', `/api/prod/affectations/${id}/annuler`, { motif: f.motif.value.trim() });
+    toast('Affectation retirée.'); route(); return true;
+  });
+}
+
+async function resoudreSignalement(id) {
+  fenetre(`<h3>Résoudre le signalement</h3><div class="msg err" hidden role="alert"></div>
+    <div class="champ"><label for="sg-n">Note de résolution</label><input id="sg-n" name="note" maxlength="300"></div>
+    <div class="pied"><button class="btn ghost" value="annuler" formnovalidate>Retour</button><button class="btn" value="ok">Résolu</button></div>`, async (f) => {
+    await api('POST', `/api/prod/signalements/${id}/resoudre`, { note: f.note.value.trim() });
+    toast('Signalement résolu.'); route(); return true;
+  });
+}
+
+/* ---------------------------------------------------------------- Pointage (version simple) */
+ECRANS.pointage = async (m) => {
+  const jourDef = new Date().toISOString().slice(0, 10);
+  const [OF, ouvriers] = await Promise.all([api('GET', '/api/prod/of?statut=en_cours'), api('GET', '/api/prod/ouvriers')]);
+  m.innerHTML = entete('Pointage', 'Version simple : le responsable pointe le <b>début</b> et la <b>fin</b> des tâches pour le compte de chaque ouvrier (web ou tablette). Le temps prévu vient de la gamme du produit.',
+    `<div class="row-f"><div class="champ" style="margin:0"><label for="pg-du" class="mute small">Jour&nbsp;</label><input id="pg-du" type="date" value="${jourDef}" style="width:150px"></div>
+      <div class="champ" style="margin:0"><label for="pg-o" class="mute small">Ouvrier&nbsp;</label><select id="pg-o"><option value="">Tous</option>${ouvriers.filter((o) => o.actif).map((o) => `<option value="${o.id}">${esc(o.nom)}</option>`).join('')}</select></div>
+      ${peut('production.pointage', 'creer') && OF.length ? '<button class="btn cta" data-r="nouveau">+ Pointage</button>' : ''}</div>`) +
+    `<div id="pg"></div>`;
+  const charger = async () => {
+    const q = new URLSearchParams(); if ($('#pg-du').value) q.set('du', $('#pg-du').value), q.set('au', $('#pg-du').value); if ($('#pg-o').value) q.set('ouvrier_id', $('#pg-o').value);
+    const P = await api('GET', '/api/prod/pointages?' + q.toString());
+    const mn = (x) => x ? qteF(Math.round(x / 60 * 10) / 10) + ' min' : '—';
+    const duree = (p) => p.fin ? mn((new Date(p.fin) - new Date(p.debut)) / 1000) : 'en cours';
+    $('#pg').innerHTML = `<div class="panneau" style="overflow:auto"><table class="nombres"><thead><tr><th>Ouvrier</th><th>OF</th><th>Partie</th><th>Début</th><th>Fin</th><th>Durée</th><th>Temps prévu (gamme)</th><th>Source</th><th></th></tr></thead><tbody>
+      ${P.filter((p) => !p.annule).map((p) => `<tr><td><b>${esc(p.ouvrier)}</b></td><td class="mono small">${esc(p.numero)}</td><td>${NOM_PARTIE[p.partie]}</td>
+        <td class="small">${dt(p.debut)}</td><td class="small">${p.fin ? dt(p.fin) : '—'}</td><td class="n">${duree(p)}</td><td class="n">${p.temps_prevu_piece ? qteF(p.temps_prevu_piece) + ' min/pièce' : '—'}</td><td>${p.source === 'tablette' ? 'Tablette' : 'Web'}</td>
+        <td>${peut('production.pointage', 'modifier') ? `<button class="btn ghost sm" data-corr="${p.id}" data-v="${p.version}" data-fin="${p.fin || ''}" data-debut="${p.debut}">Corriger</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="mute">Aucun pointage ce jour.</td></tr>'}</tbody></table></div>
+      ${P.some((p) => p.annule) ? '<p class="mute small">' + P.filter((p) => p.annule).length + ' pointage(s) annulé(s) ce jour (motif tracé à l’audit).</p>' : ''}`;
+    $('#pg').onclick = (e) => {
+      const b = e.target.closest('[data-corr]'); if (!b) return;
+      formCorrection(b.dataset);
+    };
+  };
+  $('#pg-du').onchange = charger; $('#pg-o').onchange = charger; charger();
+  m.onclick = (e) => { if (e.target.closest('[data-r=nouveau]')) return formPointage(OF, ouvriers); };
+};
+
+async function formPointage(OF, ouvriers) {
+  const actifs = ouvriers.filter((o) => o.actif);
+  if (!actifs.length) return toast('Créez d’abord un ouvrier (écran Affectation).', true);
+  fenetre(`<h3>Nouveau pointage</h3><div class="msg err" hidden role="alert"></div>
+    <div class="champ"><label for="pt-o">Ordre de fabrication *</label><select id="pt-o" name="of" required>${OF.map((o) => `<option value="${o.id}">${esc(o.numero)} — ${esc(o.reference)}</option>`).join('')}</select></div>
+    <div class="champ"><label for="pt-p">Partie *</label><select id="pt-p" name="partie" required>${[1, 2, 3].map((n) => `<option value="${n}">${NOM_PARTIE[n]}</option>`).join('')}</select></div>
+    <div class="champ"><label for="pt-w">Ouvrier *</label><select id="pt-w" name="ouvrier" required>${actifs.map((o) => `<option value="${o.id}">${esc(o.nom)}</option>`).join('')}</select></div>
+    <div class="grille2"><div class="champ"><label for="pt-d">Début *</label><input id="pt-d" name="debut" type="datetime-local" required></div>
+      <div class="champ"><label for="pt-f">Fin (vide = en cours)</label><input id="pt-f" name="fin" type="datetime-local"></div></div>
+    <div class="champ"><label for="pt-r">Remarques</label><input id="pt-r" name="remarques" maxlength="300"></div>
+    <div class="pied"><button class="btn ghost" value="annuler" formnovalidate>Annuler</button><button class="btn" value="ok">Enregistrer</button></div>`, async (f) => {
+    const body = { of_id: +f.of.value, partie: +f.partie.value, ouvrier_id: +f.ouvrier.value, debut: new Date(f.debut.value).toISOString() };
+    if (f.fin.value) body.fin = new Date(f.fin.value).toISOString();
+    if (f.remarques.value.trim()) body.remarques = f.remarques.value.trim();
+    await api('POST', '/api/prod/pointages', body);
+    toast('Pointage enregistré.'); route(); return true;
+  });
+}
+
+async function formCorrection(d) {
+  fenetre(`<h3>Corriger le pointage</h3><div class="msg err" hidden role="alert"></div>
+    <div class="grille2"><div class="champ"><label for="pc-d">Début</label><input id="pc-d" name="debut" type="datetime-local"></div>
+      <div class="champ"><label for="pc-f">Fin</label><input id="pc-f" name="fin" type="datetime-local"></div></div>
+    <div class="pied"><button class="btn ghost" value="annuler" formnovalidate>Retour</button><button class="btn" value="ok">Enregistrer la correction</button></div>`, async (f) => {
+    const body = { version: +d.v };
+    if (f.debut.value) body.debut = new Date(f.debut.value).toISOString();
+    if (f.fin.value) body.fin = new Date(f.fin.value).toISOString();
+    await api('PATCH', `/api/prod/pointages/${d.corr}`, body);
+    toast('Pointage corrigé (tracé à l’audit).'); route(); return true;
+  });
+  const f = $('#fen-form');
+  const isoLocal = (s) => { const d = new Date(s); return isNaN(d) ? '' : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+  f.debut.value = isoLocal(d.debut); if (d.fin) f.fin.value = isoLocal(d.fin);
+}
+
 /* ---------------------------------------------------------------- Gammes versionnées */
 ECRANS.gammeVersions = async (m) => {
   const produits = await api('GET', '/api/produits').catch(() => []);
