@@ -18,6 +18,7 @@ function construire(opts = {}) {
 
   app.setErrorHandler((err, req, reply) => {
     if (err.validation) return reply.code(400).send({ erreur: 'requete_invalide', message: 'Requête invalide : ' + err.message });
+    if (typeof err.code === 'string' && err.code.startsWith('FST_ERR_CTP_')) return reply.code(400).send({ erreur: 'requete_invalide', message: 'Requête invalide : contenu illisible.' });
     if (err.statusCode === 429) return reply.code(429).send({ erreur: 'trop_de_requetes', message: 'Trop de tentatives. Patientez une minute.' });
     if (err.statusCode && err.statusCode < 500 && err.expose !== false && typeof err.code === 'string' && /^[a-z_]+$/.test(err.code)) {
       return reply.code(err.statusCode).send({ erreur: err.code, message: err.message });
@@ -56,6 +57,10 @@ function construire(opts = {}) {
   app.register(require('./lib/routes-prod'));
   app.register(require('./lib/routes-atelier'));
   app.register(require('./lib/routes-fichiers'));
+  // 0.15.0 : fiches techniques versionnées, commandes à compléter, codes-barres, étiquettes, traçabilité
+  app.register(require('./lib/routes-fiches'));
+  app.register(require('./lib/routes-codes-barres'));
+  app.register(require('./lib/routes-etiquettes'));
   return app;
 }
 

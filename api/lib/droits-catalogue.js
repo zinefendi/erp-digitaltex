@@ -29,6 +29,8 @@ const MODULES = [
     ['articles', 'Articles et prestations (hors Studio)', SANS('valider', 'annuler')],
     // 0.8.0 : produits finis (référence serveur, BOM, gamme, marquages, prix) — rien n'est supprimé
     ['produits_finis', 'Produits finis (références, BOM, gamme)', SANS('supprimer')],
+    // 0.15.0 : codes-barres produit (un par taille × couleur, code sachet distinct)
+    ['codes_barres', 'Codes-barres produit', ['lire', 'creer', 'modifier', 'exporter']],
   ]],
   [3, 'compta_clients', 'Comptabilité clients', [
     ['comptes', 'Comptes clients et échéances', ['lire', 'modifier', 'exporter']],
@@ -56,6 +58,8 @@ const MODULES = [
     ['etapes', 'Validation des 3 parties (coupe, marquage, assemblage)', ['lire', 'valider', 'annuler']],
     ['taches', 'Tâches et affectations', ['lire', 'creer', 'modifier', 'valider', 'supprimer']],
     ['pointage', 'Pointage des temps', ['lire', 'creer', 'modifier', 'valider', 'exporter']],
+    // 0.15.0 : étiquettes de composition et d'emballage (générer = créer, imprimer / réimprimer = valider)
+    ['etiquettes', 'Étiquettes (composition, emballage)', ['lire', 'creer', 'valider', 'exporter']],
   ]],
   [7, 'bom', 'Produits finis (BOM)', [
     ['nomenclatures', 'Nomenclatures (matières)', SANS('annuler')],
@@ -84,6 +88,8 @@ const MODULES = [
     // 0.8.0 : codes article des produits finis, coûts et tarifs de production
     ['codes_article', 'Codes article (produits finis)', ['lire', 'creer', 'modifier', 'supprimer']],
     ['couts', 'Coûts et tarifs de production (coût minute, perte, marge, marquages)', ['lire', 'modifier']],
+    // 0.15.0 : étiquettes (origine, fibres FR/AR, modèles d'entretien, préfixe GS1)
+    ['etiquettes', 'Étiquettes, fibres et entretien', ['lire', 'modifier']],
     ['audit', 'Journal d’audit', ['lire', 'exporter']],
     ['sauvegardes', 'Sauvegardes et restauration', ['lire', 'valider']],
   ]],
@@ -118,7 +124,9 @@ const MATRICE = {
     modules: { infographie: 'L', commercial: 'G', production: 'L', bom: 'L', stock_mp: 'L', stock_pf: 'L' },
     remplace: { 'infographie.lookbook': 'G', 'compta_clients.comptes': 'L',
       // les factures et avoirs émis ne s'annulent que par la Comptabilité
-      'commercial.factures': SANS('annuler'), 'commercial.avoirs': SANS('annuler') },
+      'commercial.factures': SANS('annuler'), 'commercial.avoirs': SANS('annuler'),
+      // 0.15.0 : le commercial lance les OF de ses commandes validées et imprime les étiquettes
+      'production.etiquettes': 'G' },
     visibilites: ['prix', 'encours'],
   },
   infographie: {
@@ -136,13 +144,13 @@ const MATRICE = {
   },
   production: {
     modules: { infographie: 'L', commercial: 'L', production: 'G', bom: 'L', stock_mp: 'L', stock_pf: 'L' },
-    remplace: { 'commercial.*': null, 'commercial.commandes': 'L', 'commercial.bl': 'L', 'commercial.produits_finis': 'L',
+    remplace: { 'commercial.*': null, 'commercial.commandes': 'L', 'commercial.bl': 'L', 'commercial.produits_finis': 'L', 'commercial.codes_barres': 'L',
       'stock_mp.sorties': 'G', 'stock_pf.entrees': 'G' },
     visibilites: [],
   },
   magasin: {
     modules: { infographie: 'L', production: 'L', bom: 'L', stock_mp: 'G', stock_pf: 'G' },
-    remplace: { 'commercial.bl': 'L', 'compta_fournisseurs.achats': 'L', 'commercial.produits_finis': 'L' },
+    remplace: { 'commercial.bl': 'L', 'compta_fournisseurs.achats': 'L', 'commercial.produits_finis': 'L', 'commercial.codes_barres': 'L', 'production.etiquettes': ['lire', 'valider'] },
     visibilites: [],
   },
   rh_paie: {

@@ -49,13 +49,14 @@
   function afficher() {
     const q = $('#q').value.trim().toLowerCase(), fe = $('#fetat').value;
     const rows = PRODUITS.filter((p) => (!fe || p.etat === fe)
-      && (!q || [p.reference, p.client_nom, p.code_article].join(' ').toLowerCase().includes(q)));
+      && (!q || [p.reference, p.client_nom || 'basique', p.code_article].join(' ').toLowerCase().includes(q)))
+      .sort((a, b) => (a.client_id ? 1 : 0) - (b.client_id ? 1 : 0)); // Basique (sans client) en tête
     $('#compte').textContent = rows.length + ' produit(s) affiché(s) sur ' + PRODUITS.length;
     const voitPrix = PRODUITS.length && PRODUITS[0].prix_ht !== undefined;
     const voitPri = PRODUITS.length && PRODUITS[0].pri !== undefined;
     $('#liste').innerHTML = rows.map((p) => `<tr data-open="${p.id}">
       <td class="b">${esc(p.reference)}</td><td>${esc(p.code_article)}</td>
-      <td>${esc(p.client_nom || '—')}</td>
+      <td>${p.client_id ? esc(p.client_nom || '') : '<i>Basique</i>'}</td>
       <td><span class="${p.etat === 'specifique' ? 'warn' : 'ok'}">${p.etat === 'specifique' ? 'Spécifique' : 'Basique'}</span></td>
       <td class="small">${esc((p.taillant || []).join(', '))}</td>
       <td class="n b">${voitPrix ? n3(p.prix_ht) : '—'}</td>
@@ -86,7 +87,7 @@
     <div class="row">
       <label>Code article<select id="f-code" ${p ? 'disabled' : ''}>${CODES.filter((c) => c.actif).map((c) => `<option value="${esc(c.code)}" ${p && p.code_article === c.code ? 'selected' : ''}>${esc(c.code)} — ${esc(c.libelle)}</option>`).join('')}</select></label>
       <label>Sexe<select id="f-sexe" ${p ? 'disabled' : ''}>${Object.entries(sexeL).map(([k, v]) => `<option value="${k}" ${p && p.sexe === k ? 'selected' : ''}>${k} — ${v}</option>`).join('')}</select></label>
-      <label>Client (vide = basique)<select id="f-client"><option value="">— Aucun —</option>${CLIENTS.map((c) => `<option value="${esc(c.id)}" ${p && p.client_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+      <label>Client<select id="f-client"><option value="">Basique (sans client)</option>${CLIENTS.map((c) => `<option value="${esc(c.id)}" ${p && p.client_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
       <label>Taillant (séparés par des virgules)<input id="f-taillant" placeholder="S, M, L, XL" value="${esc(p ? (p.taillant || []).join(', ') : '')}"></label>
     </div>
     ${p ? '' : `<p class="small mute">Référence qui sera attribuée : <b>${esc(nextRef || '…')}</b> (par le serveur, dans la transaction).</p>`}

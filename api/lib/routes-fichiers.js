@@ -35,7 +35,9 @@ const peutLire = (eff, nature) => (nature === 'scan_paiement'
   ? D.voit(eff, 'prix') && (D.peut(eff, 'commercial.reglements', 'lire') || D.peut(eff, 'commercial.factures', 'lire') || D.peut(eff, 'compta_clients.lettrage', 'lire'))
   : nature === 'photo_atelier'
   ? D.peut(eff, 'production.of', 'lire')
-  : D.peut(eff, 'commercial.commandes', 'lire') || D.peut(eff, 'commercial.produits_finis', 'lire') || D.peut(eff, 'commercial.bl', 'lire') || D.peut(eff, 'commercial.factures', 'lire'));
+  : nature === 'etiquettes'
+  ? D.peut(eff, 'production.etiquettes', 'lire')
+  : D.peut(eff, 'commercial.commandes', 'lire') || D.peut(eff, 'infographie.fiches', 'lire') || D.peut(eff, 'commercial.produits_finis', 'lire') || D.peut(eff, 'commercial.bl', 'lire') || D.peut(eff, 'commercial.factures', 'lire'));
 const peutEcrire = (eff, nature) => (nature === 'scan_paiement'
   ? D.voit(eff, 'prix') && (D.peut(eff, 'commercial.reglements', 'creer') || D.peut(eff, 'commercial.factures', 'modifier') || D.peut(eff, 'compta_clients.lettrage', 'creer'))
   : nature === 'photo_atelier'
@@ -180,3 +182,27 @@ module.exports = async function routesFichiers(app) {
   }));
 };
 module.exports.mimeDe = mimeDe;
+
+// 0.15.0 : fichiers produits par le serveur (PDF des fiches, PDF tamponnés, étiquettes) — même dossier, même table,
+// même audit que les envois des postes. `c` = client de la transaction en cours.
+async function enregistrerFichier(c, u, { nature, cible_type, cible_id, nom, mime, octets }) {
+  const emp = crypto.createHash('sha256').update(octets).digest('hex');
+  const sous = new Date().toISOString().slice(0, 7);
+  const fichier = `${sous}/${nature}-${Date.now().toString(36)}-${crypto.randomBytes(5).toString('hex')}.${EXT[mime] || 'bin'}`;
+  fs.mkdirSync(path.join(DIR, sous), { recursive: true });
+  fs.writeFileSync(path.join(DIR, fichier), octets, { flag: 'wx' });
+  const propre = String(nom).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').slice(0, 160);
+  const r = (await c.query(`insert into commercial.fichiers (nature, cible_type, cible_id, nom, mime, taille, empreinte, chemin, cree_par)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`, [nature, cible_type, String(cible_id), propre, mime, octets.length, emp, fichier, u.id])).rows[0];
+  await c.query(`insert into noyau.audit (utilisateur_id, identifiant, action, entite, entite_id, details) values ($1,$2,'fichier_ajoute',$3,$4,$5)`,
+    [u.id, u.identifiant || null, nature, String(r.id), { cible: cible_type, cible_id: String(cible_id), nom: propre, taille: octets.length, empreinte: emp, origine: 'serveur' }]);
+  return { id: Number(r.id), nom: propre };
+}
+/** Octets d'un fichier rangé (chemin relatif contrôlé). */
+function lireOctets(chemin) {
+  const p = path.join(DIR, path.normalize(chemin).replace(/^(\.\.[/\\])+/, ''));
+  if (!p.startsWith(path.resolve(DIR) + path.sep)) throw new Error('Chemin de fichier invalide');
+  return fs.readFileSync(p);
+}
+module.exports.enregistrerFichier = enregistrerFichier;
+module.exports.lireOctets = lireOctets;

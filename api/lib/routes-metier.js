@@ -371,6 +371,11 @@ module.exports = async function routesMetier(app) {
       }
       if (avant && col === 'orders' && rec.status === 'annulee' && avant.status !== 'annulee' && !D.peut(req.droits, 'commercial.commandes', 'annuler')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas d’annuler une commande.');
       if (col === 'invoices' && !avant && !rec.number) return erreur(reply, 400, 'numero_absent', 'Une facture doit avoir un numéro officiel.');
+      // 0.15.0 : « Basique » n'est jamais un client — commande, BL et facture ont toujours un client nommé
+      if (['orders', 'bls', 'invoices'].includes(col) && rec.status !== 'annulee' && rec.status !== 'annule') {
+        const nom = String(rec.client?.name || '').trim();
+        if (!nom || /^basique$/i.test(nom)) return erreur(reply, 400, 'client_obligatoire', '« Basique » n’est pas un client : choisissez le client du document.');
+      }
       // 0.13.0 : facture de plusieurs BL (même client) — contrôles serveur à la création ; ensuite BL et commandes ne changent plus
       if (col === 'invoices' && !avant && (idsBL(rec).length || Array.isArray(rec.orderIds) || (rec.lines || []).some((l) => l.orderId || l.blId))) {
         try {

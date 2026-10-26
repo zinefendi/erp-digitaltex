@@ -317,6 +317,16 @@ dialog.mini{display:none!important}
   .roles-choix{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:no-preference){.tuile,.btn{transition:border-color .15s,background .15s}}
+/* lot 0.15.0 : fiches techniques */
+.grille-fiches{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.carte-fiche{display:flex;flex-direction:column;gap:4px;text-align:left;border:1px solid var(--rule);border-radius:12px;background:#fff;padding:10px;cursor:pointer;font:inherit;color:inherit}
+.carte-fiche:hover,.carte-fiche:focus-visible{border-color:var(--ink-2);box-shadow:0 2px 10px rgba(0,0,0,.06)}
+.vign{display:flex;align-items:center;justify-content:center;height:130px;background:var(--beige);border-radius:8px;overflow:hidden}
+.vign img{max-width:100%;max-height:100%;object-fit:contain}
+.frise{display:flex;flex-direction:column;gap:8px}
+.etape-v{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;border:1px solid var(--rule);border-radius:10px;padding:8px;background:#fff}
+.etape-v .vign{height:64px}.etape-v .actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.etape-v.validee,.etape-v.en_production{border-left:4px solid #2e7d32}.etape-v.proposee{border-left:4px solid #e0a100}.etape-v.archivee{opacity:.7}
 </style>
 </head>
 <body>
@@ -895,5 +905,6 @@ document.addEventListener('click', async (e) => {
 <script src="/erp-ventes.js"></script>
 <script src="/erp-stocks.js"></script>
 <script src="/erp-production.js"></script>
+<script src="/erp-fiches.js"></script>
 </body>
 </html>

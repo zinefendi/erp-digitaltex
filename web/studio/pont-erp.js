@@ -23,11 +23,34 @@
     a.download = name; document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
   };
+  // ERP 0.15.0 : chaque PDF (facture, BL, reçu, fiche) propose « Ouvrir », « Imprimer » (même document) et « Télécharger »
+  const imprimerUrl = (url) => {
+    const f = document.createElement('iframe');
+    f.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0';
+    f.src = url; document.body.appendChild(f);
+    f.onload = () => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (_) { window.open(url, '_blank'); } setTimeout(() => f.remove(), 60000); };
+  };
   const ouvrirPdf = (name, bytes) => {
     const url = URL.createObjectURL(new Blob([u8(bytes)], { type: 'application/pdf' }));
-    const w = window.open(url, '_blank');
-    if (!w) telecharger(name, bytes, 'application/pdf');
-    setTimeout(() => URL.revokeObjectURL(url), 120000);
+    document.getElementById('erp-pdf-barre')?.remove();
+    const b = document.createElement('div'); b.id = 'erp-pdf-barre';
+    b.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:2147483000;display:flex;gap:8px;align-items:center;background:#1d2a38;color:#fff;border-radius:12px;padding:8px 10px 8px 14px;box-shadow:0 6px 24px rgba(0,0,0,.25);font:13px/1.3 system-ui,sans-serif;max-width:94vw';
+    const bt = 'border:0;border-radius:8px;padding:7px 12px;font:600 13px system-ui,sans-serif;cursor:pointer;';
+    b.innerHTML = '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:40vw"></span>' +
+      `<button data-x="ouvrir" style="${bt}background:#fff;color:#1d2a38">Ouvrir le PDF</button><button data-x="imprimer" style="${bt}background:#e8572a;color:#fff">Imprimer</button>` +
+      `<button data-x="telecharger" style="${bt}background:transparent;color:#fff;border:1px solid #fff6">Télécharger</button><button data-x="fermer" title="Fermer" style="${bt}background:transparent;color:#fff">✕</button>`;
+    b.querySelector('span').textContent = name;
+    b.onclick = (e) => {
+      const x = e.target.closest('[data-x]'); if (!x) return;
+      if (x.dataset.x === 'ouvrir') { if (!window.open(url, '_blank')) telecharger(name, bytes, 'application/pdf'); }
+      if (x.dataset.x === 'imprimer') imprimerUrl(url);
+      if (x.dataset.x === 'telecharger') telecharger(name, bytes, 'application/pdf');
+      if (x.dataset.x === 'fermer') b.remove();
+    };
+    document.body.appendChild(b);
+    // ouverture directe comme avant (si le navigateur l'autorise) ; la barre reste pour imprimer
+    window.open(url, '_blank');
+    setTimeout(() => { URL.revokeObjectURL(url); b.remove(); }, 300000);
   };
 
   // ---------- gestion : cache local + écritures enregistrement par enregistrement ----------

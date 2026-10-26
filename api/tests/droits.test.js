@@ -36,11 +36,11 @@ test.after(async () => { await app.close(); await pool.end(); });
 
 const mesDroits = async (k) => (await appel('GET', '/api/droits/moi', { jeton: J[k].jeton })).json();
 
-test('catalogue : 11 modules, 58 fonctions, matrice en base = matrice du code', async () => {
+test('catalogue : 11 modules, 61 fonctions, matrice en base = matrice du code', async () => {
   const cat = (await appel('GET', '/api/droits/catalogue', { jeton: J.admin.jeton })).json();
   assert.equal(cat.modules.length, 11);
   assert.deepEqual(cat.modules.map((m) => m.numero), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-  assert.equal(cat.modules.flatMap((m) => m.fonctions).length, 58);
+  assert.equal(cat.modules.flatMap((m) => m.fonctions).length, 61);
   assert.equal(cat.actions.length, 7);
   for (const role of Object.keys(C.MATRICE)) {
     const id = (await pool.query('select id from noyau.roles where code = $1', [role])).rows[0].id;

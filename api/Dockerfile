@@ -7,6 +7,7 @@ COPY server.js ./
 COPY lib ./lib
 COPY migrations ./migrations
 COPY scripts ./scripts
+COPY assets ./assets
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 CMD wget -qO- http://127.0.0.1:3000/api/sante >/dev/null || exit 1

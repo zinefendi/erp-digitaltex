@@ -193,6 +193,15 @@ export async function mountStudio(host, cfgIn = {}) {
   };
   const engine = new Engine($('.view'), { models, startGarment: startId(), startColor: cfg.startColor || BLACK, deferGLB: true, watermark: cfg.watermark && !cfg.isPro, wmView: false, watermarkText: cfg.watermarkText || 'VETHYPRO' });
   engineRef.e = engine;
+  // ERP 0.15.0 : une demande « ouvrir-fiche » peut arriver pendant le chargement du modèle 3D : on la garde pour la fin du montage
+  let FICHE_DEMANDE = null, FICHE_OUVRIR = null;
+  const FICHE_PRET = () => { if (FICHE_OUVRIR && FICHE_DEMANDE) { const v = FICHE_DEMANDE; FICHE_DEMANDE = null; FICHE_OUVRIR(v); } };
+  window.addEventListener('message', (e) => {
+    if (e.origin !== location.origin || !e.data || !e.data.erp || e.data.type !== 'ouvrir-fiche') return;
+    try { sessionStorage.removeItem('erp.fiche3d'); } catch (_) { /* */ }
+    FICHE_DEMANDE = +e.data.version_id; FICHE_PRET();
+  });
+  try { const d = JSON.parse(sessionStorage.getItem('erp.fiche3d') || 'null'); if (d && d.version_id) { sessionStorage.removeItem('erp.fiche3d'); FICHE_DEMANDE = +d.version_id; } } catch (_) { /* */ }
   engine.setBackground({ type: 'studio', color: '#e9eef3' });
   engine.on('loading', (L) => { if (L.on) busy(true, `Chargement du modèle 3D ${L.name}…`, L.p); else busy(false); });
   engine.on('error', (m) => toast(m, true));
@@ -882,7 +891,7 @@ export async function mountStudio(host, cfgIn = {}) {
     const a = ARTICLES[body.article] || {};
     const unit = {}; for (const z of A.sizes) unit[z] = r3(unitPrice(z));
     const p = {
-      uid: gid(), article: body.article, garment: A.name || a.name, name: body.name, fit: body.fit, collection: body.collection, sizes: A.sizes, comment: body.comment,
+      uid: gid(), article: body.article, design: body.design, garment: A.name || a.name, name: body.name, fit: body.fit, collection: body.collection, sizes: A.sizes, comment: body.comment,
       staff: S.order.staff ?? AT.lastStaff ?? DEFSTAFF(),
       tissu: (catE(body.article).tissu || ''), compo: (catE(body.article).compo || ''),
       marks: Object.fromEntries(Object.entries(body.marking).map(([sd, m]) => [sd, { mode: m, stitches: body.emb[sd] ? body.emb[sd].stitches : null }])),
@@ -1243,5 +1252,60 @@ export async function mountStudio(host, cfgIn = {}) {
   const warm = () => { const f = familyOf(engine.garmentId); const ids = (f ? f.ids : []).filter((id) => id !== engine.garmentId && models[id] && models[id].url).slice(0, 3); let i = 0; const next = () => { if (i < ids.length) { prefetchGLB(models[ids[i++]].url); setTimeout(() => idle(next), 1500); } }; idle(next); };
   setTimeout(warm, 3000); engine.on('garment', () => setTimeout(warm, 2500));
   new ResizeObserver(() => drawTape()).observe($('.tape')); engine.on('ruler', (ri) => drawTape(ri));
+  /* ---------- ERP 0.15.0 : mode « fiche technique » (ouverte depuis la Bibliothèque des fiches) ----------
+   * La composition est enregistrée dans la version brouillon de la fiche sur le serveur (config 3D + vignette) ;
+   * une version proposée ou validée s'ouvre en lecture seule (la modifier = « Nouvelle version » dans l'ERP). */
+  const FICHE = { v: null, ligne: 0 };
+  const ficheApi = async (method, url, body) => {
+    const r = await fetch('/api' + url, { method, credentials: 'same-origin', headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+    const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.message || 'Erreur du serveur (' + r.status + ')'); return d;
+  };
+  const ficheBar = document.createElement('div');
+  ficheBar.className = 'fiche-bar'; ficheBar.hidden = true;
+  ficheBar.style.cssText = 'position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:40;display:flex;gap:8px;align-items:center;background:#fff;border:1px solid #d9cfc4;border-radius:12px;padding:6px 8px 6px 14px;box-shadow:0 4px 18px rgba(0,0,0,.12);font:13px/1.3 inherit;max-width:94%';
+  app.appendChild(ficheBar);
+  const ficheDessiner = () => {
+    const v = FICHE.v; if (!v) { ficheBar.hidden = true; return; }
+    const br = v.statut === 'brouillon';
+    ficheBar.hidden = false;
+    ficheBar.innerHTML = `<span>Fiche <b>${esc(v.reference)}</b> · v${v.numero} · ${br ? 'brouillon' : '<b>' + esc(v.statut) + '</b> (lecture seule)'}</span>
+      ${br ? `<button class="btn" data-fiche="enr" style="padding:6px 10px">Enregistrer dans la fiche</button><button class="btn ghost" data-fiche="prop" style="padding:6px 10px">Proposer au commercial</button>` : ''}
+      <button class="btn ghost" data-fiche="quit" style="padding:6px 10px" title="Quitter le mode fiche">✕</button>`;
+  };
+  async function ficheOuvrir(vid) {
+    if (!vid || (FICHE.v && FICHE.v.id === vid)) return;
+    busy(true, 'Ouverture de la fiche…');
+    try {
+      const v = await ficheApi('GET', '/fiches/versions/' + vid);
+      FICHE.v = v; FICHE.ligne = v.version_ligne;
+      if (v.config_studio && v.config_studio.layers) await engine.load(v.config_studio);
+      S.project = { id: 'fiche-' + v.fiche_id, name: v.reference }; setNameInputs(v.reference);
+      ficheDessiner(); setTab('garment'); toast(`Fiche ${v.reference} v${v.numero} ouverte.`);
+    } catch (er) { toast(er.message, true); }
+    busy(false);
+  }
+  async function ficheEnregistrer(silent) {
+    const v = FICHE.v; if (!v || v.statut !== 'brouillon') return false;
+    busy(true, 'Enregistrement dans la fiche…');
+    try {
+      const r = await ficheApi('PUT', '/fiches/versions/' + v.id, { version_ligne: FICHE.ligne, config_studio: engine.serialize(), vignette: await engine.thumbnail() });
+      const nv = (r.versions || []).find((x) => x.id === v.id); FICHE.ligne = nv ? nv.version_ligne : FICHE.ligne + 1;
+      if (!silent) toast('Composition enregistrée dans la fiche ' + v.reference + '.');
+      try { window.parent.postMessage({ erp: true, type: 'fiche-enregistree', fiche_id: v.fiche_id }, location.origin); } catch (_) { /* */ }
+      return true;
+    } catch (er) { toast(er.message, true); return false; } finally { busy(false); }
+  }
+  ficheBar.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-fiche]'); if (!b) return;
+    if (b.dataset.fiche === 'enr') return ficheEnregistrer(false);
+    if (b.dataset.fiche === 'prop') { if (await ficheEnregistrer(true)) { try { window.parent.postMessage({ erp: true, type: 'fiche-proposer', fiche_id: FICHE.v.fiche_id, version_id: FICHE.v.id }, location.origin); } catch (_) { /* */ } } return; }
+    if (b.dataset.fiche === 'quit') { FICHE.v = null; ficheDessiner(); }
+  });
+  window.addEventListener('message', (e) => {
+    if (e.origin !== location.origin || !e.data || !e.data.erp) return;
+    if (e.data.type === 'fiche-proposee' && FICHE.v && FICHE.v.id === +e.data.version_id) { FICHE.v.statut = 'proposee'; ficheDessiner(); }
+  });
+  FICHE_OUVRIR = ficheOuvrir;
+  FICHE_PRET();
   return { engine, setTab, cfg, makeZip };
 }

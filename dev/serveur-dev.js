@@ -4,17 +4,17 @@ const path = require('path'), fs = require('fs');
 const RACINE = path.join(__dirname, '..'), API = path.join(RACINE, 'api'), DON = path.join(__dirname, 'donnees');
 if (process.env.PGHOST !== '/tmp' || process.env.PGPORT !== '5433') throw new Error('Serveur de dev réservé à la base locale de test');
 process.chdir(API);
-for (const d of ['/tmp/glb', '/tmp/sauv']) fs.mkdirSync(d, { recursive: true });
+for (const d of ['/tmp/glb', '/tmp/sauv', '/tmp/fichiers']) fs.mkdirSync(d, { recursive: true });
 process.env.ERP_CATALOGUE_REPRISE = path.join(DON, 'catalogue-reprise.json');
 process.env.ERP_CATALOGUE_USINE = path.join(DON, 'catalogue-usine.json');
-process.env.ERP_GLB_DIR = '/tmp/glb'; process.env.ERP_SAUVEGARDES = '/tmp/sauv';
+process.env.ERP_GLB_DIR = '/tmp/glb'; process.env.ERP_SAUVEGARDES = '/tmp/sauv'; process.env.ERP_FICHIERS_DIR = '/tmp/fichiers';
 const { construire } = require(path.join(API, 'server.js'));
 const { pool } = require(path.join(API, 'lib/db'));
 const { migrer } = require(path.join(API, 'lib/migrations'));
 require(path.join(API, 'lib/droits'))._viderCache();
 const mdp = require(path.join(API, 'lib/mdp'));
 (async () => {
-  await pool.query(`drop schema if exists stocks cascade; drop schema if exists prod cascade; drop schema if exists ventes cascade; drop schema if exists pf cascade; drop schema if exists compta cascade; drop schema if exists registres cascade; drop schema if exists commercial cascade; drop schema if exists infographie cascade; drop schema if exists parametres cascade; drop schema if exists noyau cascade; drop schema if exists reprise cascade; drop table if exists public.migrations;
+  await pool.query(`drop schema if exists fiches cascade; drop schema if exists stocks cascade; drop schema if exists prod cascade; drop schema if exists ventes cascade; drop schema if exists pf cascade; drop schema if exists compta cascade; drop schema if exists registres cascade; drop schema if exists commercial cascade; drop schema if exists infographie cascade; drop schema if exists parametres cascade; drop schema if exists noyau cascade; drop schema if exists reprise cascade; drop table if exists public.migrations;
     create schema reprise; create table reprise.enregistrements (id bigserial primary key, collection text not null, id_origine text not null, donnees jsonb not null, unique (collection, id_origine));`);
   const logo = 'data:image/png;base64,' + require('fs').readFileSync(path.join(RACINE, 'web/studio/icon.png')).toString('base64');
   await pool.query(`insert into reprise.enregistrements (collection, id_origine, donnees) values
