@@ -90,8 +90,21 @@ async function nettoyerLignes(db, lignes, devise) {
     if (!(+l.pu >= 0) || +l.pu > 1e8) throw leve('ligne_invalide', `Ligne ${i + 1} : le prix unitaire doit être positif.`);
     const remise = Math.min(100, Math.max(0, +l.remise || 0));
     if (produit && !V.REF_PF.test(produit)) throw leve('ligne_invalide', `Ligne ${i + 1} : référence produit fini invalide (${produit}).`);
-    return { produit, designation, couleur: String(l.couleur || '').trim().slice(0, 60), taille: String(l.taille || '').trim().slice(0, 30),
-      qte: r3(qte), pu: arr(+l.pu), remise, service: !!l.service, ...(String(l.staff || '').trim() ? { staff: String(l.staff).trim().slice(0, 60) } : {}) };
+    // 0.14.0 : détail couleurs × tailles (fenêtre de saisie) ; la quantité de la ligne est son total
+    let detail;
+    if (l.detail !== undefined && l.detail !== null) {
+      if (!Array.isArray(l.detail) || l.detail.length > 400) throw leve('ligne_invalide', `Ligne ${i + 1} : détail couleurs × tailles invalide.`);
+      const vu = new Set();
+      detail = l.detail.map((x) => ({ couleur: String((x && x.couleur) || '').trim().slice(0, 60), taille: String((x && x.taille) || '').trim().slice(0, 30), qte: +(x && x.qte) })).filter((x) => x.qte > 0);
+      for (const x of detail) {
+        if (!Number.isInteger(x.qte) || x.qte > 1e6) throw leve('ligne_invalide', `Ligne ${i + 1} : quantité par taille invalide (${x.couleur} ${x.taille}).`);
+        const k = (x.couleur + '|' + x.taille).toLowerCase(); if (vu.has(k)) throw leve('ligne_invalide', `Ligne ${i + 1} : ${x.couleur} ${x.taille} saisi deux fois.`); vu.add(k);
+      }
+      if (!detail.length) detail = undefined;
+      else if (Math.abs(detail.reduce((t, x) => t + x.qte, 0) - qte) > 0.0005) throw leve('ligne_invalide', `Ligne ${i + 1} : la quantité (${qte}) doit être le total des quantités par couleur et taille (${detail.reduce((t, x) => t + x.qte, 0)}).`);
+    }
+    return { produit, designation, couleur: detail ? '' : String(l.couleur || '').trim().slice(0, 60), taille: detail ? '' : String(l.taille || '').trim().slice(0, 30),
+      qte: r3(qte), pu: arr(+l.pu), remise, service: !!l.service, ...(String(l.staff || '').trim() ? { staff: String(l.staff).trim().slice(0, 60) } : {}), ...(detail ? { detail } : {}) };
   });
   const refs = [...new Set(L.map((l) => l.produit).filter(Boolean))];
   if (refs.length) {
@@ -351,14 +364,17 @@ module.exports = async function routesVentes(app) {
     const numero = (await c.query("select parametres.attribuer_numero('commande', $1::date) n", [date])).rows[0].n;
     const cl = await client(c, d.client_id);
     const kTTC = (l) => (d.devise === 'DT' && d.prix_ttc === false ? (1 + (+d.tva || 0) / 100) * (l.service ? 1 : 1 + (+d.fodec || 0) / 100) : 1);
-    const lines = d.lignes.map((l) => {
+    // 0.14.0 : une ligne à détail couleurs × tailles devient une ligne de commande par couleur × taille (stock, BL) ; idx = ligne d'origine
+    const lines = d.lignes.flatMap((l, idx) => {
       const net = (+l.pu || 0) * (1 - (+l.remise || 0) / 100) * kTTC(l);
-      return { id: rid(), src: l.produit ? 'produit_fini' : 'article', article: l.produit || '', designation: l.designation,
-        staff: l.staff || '', color: l.couleur || '', size: l.taille || '', qty: l.qte,
-        pu: l.remise || kTTC(l) !== 1 ? (d.devise === 'DT' ? r3 : r2)(net) : l.pu, service: !!l.service };
+      const pu = l.remise || kTTC(l) !== 1 ? (d.devise === 'DT' ? r3 : r2)(net) : l.pu;
+      const parts = Array.isArray(l.detail) && l.detail.length ? l.detail.map((x) => [x.couleur, x.taille, x.qte]) : [[l.couleur || '', l.taille || '', l.qte]];
+      return parts.map(([color, size, qty]) => ({ id: rid(), src: l.produit ? 'produit_fini' : 'article', article: l.produit || '', designation: l.designation,
+        staff: l.staff || '', color, size, qty, pu, service: !!l.service, _idx: idx }));
     });
     const total = r3(lines.reduce((s, l) => s + l.qty * l.pu, 0));
     const now = new Date().toISOString();
+    const parIdx = lines.map((l) => l._idx); for (const l of lines) delete l._idx;
     const order = { id: rid(), number: numero, clientPO: b.bc_client || d.ref_client || '', client: cl.snap, date, delivery: b.livraison || '',
       lines, advances: [], products: [], status: 'en_cours', total, createdAt: now, updatedAt: now,
       origine: { type: T.type, id: Number(d.id), numero: d.numero },
@@ -370,6 +386,7 @@ module.exports = async function routesVentes(app) {
     if (d.origine_id) await c.query('update ventes.documents set commande_id = $2, commande_num = $3 where id = $1', [d.origine_id, order.id, numero]);
     await S.auditer(c, req, `${T.entite}_transforme`, { entite: T.entite, entiteId: d.numero, details: { commande: numero } });
     await S.auditer(c, req, 'commande_cree', { entite: 'commande', entiteId: order.id, apres: { numero, client: cl.snap.name, lignes: lines.length }, details: { origine: d.numero, vente_a_perte: d.vente_perte || undefined } });
+    Object.defineProperty(order, '_parIdx', { value: parIdx, enumerable: false });
     return order;
   }
   const schConv = { params: { type: 'object', properties: { type: { type: 'string', enum: ['devis', 'proformas'] }, id: { type: 'integer' } } },
@@ -405,9 +422,11 @@ module.exports = async function routesVentes(app) {
       const date = req.body.date || jour(), local = d.devise === 'DT';
       const timbre = local ? ((await taux(c, 'timbre_fiscal', date)) || 0) : 0;
       const numero = (await c.query("select parametres.attribuer_numero('facture', $1::date) n", [date])).rows[0].n;
-      const lines = d.lignes.map((l, i) => { const ol = order.lines[i];
-        return { designation: l.designation, article: l.produit || '', staff: l.staff || '', color: l.couleur || '', size: l.taille || '', qty: l.qte, pu: l.pu, remise: +l.remise || 0,
-          ...(l.service ? { service: true } : {}), lineIds: [ol.id], qtyBy: { [ol.id]: l.qte } }; });
+      // 0.14.0 : une ligne à détail couleurs × tailles reste UNE ligne de facture (résumé dans la désignation), reliée à ses lignes de commande
+      const lines = d.lignes.map((l, i) => { const ols = order.lines.filter((_, k) => order._parIdx[k] === i);
+        const res = Array.isArray(l.detail) && l.detail.length ? ' (' + V.resumeDetail(l.detail) + ')' : '';
+        return { designation: l.designation + res, article: l.produit || '', staff: l.staff || '', color: l.couleur || '', size: l.taille || '', qty: l.qte, pu: l.pu, remise: +l.remise || 0,
+          ...(l.service ? { service: true } : {}), ...(l.detail ? { detail: l.detail } : {}), lineIds: ols.map((x) => x.id), qtyBy: Object.fromEntries(ols.map((x) => [x.id, x.qty])) }; });
       const now = new Date().toISOString();
       const inv = { id: rid(), number: numero, date, due: req.body.echeance || plusJours(date, 30), orderId: order.id, orderNumber: order.number, clientPO: order.clientPO,
         blIds: [], blNumbers: [], client: order.client, lines, tva: +d.tva || 0, timbre: r3(timbre), fodec: local ? +d.fodec || 0 : 0, pricesTTC: local ? d.prix_ttc !== false : false,

@@ -566,3 +566,25 @@ test('0.13.0 Paramètres › Factures : interrupteur facturation multi-BL (admin
   r = await appel('PUT', '/api/parametres/factures', { jeton: J.admin, body: { multi_bl: true } });
   assert.equal(r.json().multi_bl, true);
 });
+
+test('0.14.0 détail couleurs × tailles : proforma → commande éclatée par couleur × taille → facture d’une ligne', async () => {
+  const det = [{ couleur: 'Blanc', taille: 'M', qte: 12 }, { couleur: 'Blanc', taille: 'L', qte: 10 }, { couleur: 'Bleu marine', taille: 'M', qte: 8 }];
+  const L = (extra) => ({ produit: PF.reference, designation: 'Polo homme', qte: 30, pu: 25, detail: det, ...extra });
+  let r = await appel('POST', '/api/ventes/proformas', { jeton: J.commercial, body: { client_id: 'cl-local', lignes: [L({ qte: 29 })] } });
+  assert.equal(r.json().erreur, 'ligne_invalide', 'quantité ≠ total du détail : refusé');
+  r = await appel('POST', '/api/ventes/proformas', { jeton: J.commercial, body: { client_id: 'cl-local', lignes: [L({ detail: [...det, { couleur: 'blanc', taille: 'm', qte: 1 }], qte: 31 })] } });
+  assert.equal(r.json().erreur, 'ligne_invalide', 'même couleur × taille deux fois : refusé');
+  r = await appel('POST', '/api/ventes/proformas', { jeton: J.commercial, body: { client_id: 'cl-local', lignes: [L(), { designation: 'Transport', qte: 1, pu: 30, service: true }] } });
+  assert.equal(r.statusCode, 201, r.body);
+  const p = (await appel('GET', `/api/ventes/proformas/${r.json().id}`, { jeton: J.commercial })).json();
+  assert.deepEqual(p.lignes[0].detail, det); assert.equal(p.lignes[0].qte, 30);
+  r = await appel('POST', `/api/ventes/proformas/${p.id}/facture`, { jeton: J.admin, body: { version: p.version } });
+  assert.equal(r.statusCode, 201, r.body);
+  const G = await gestionDe(J.compta);
+  const o = G.orders.find((x) => x.number === r.json().commande.numero), f = G.invoices.find((x) => x.number === r.json().facture.numero);
+  assert.equal(o.lines.length, 4, '3 couleurs × tailles + transport');
+  assert.deepEqual(o.lines.filter((l) => !l.service).map((l) => [l.color, l.size, l.qty]), [['Blanc', 'M', 12], ['Blanc', 'L', 10], ['Bleu marine', 'M', 8]]);
+  assert.equal(f.lines.length, 2, 'facture : une ligne pour le produit, une pour le transport');
+  assert.equal(f.lines[0].qty, 30); assert.equal(f.lines[0].lineIds.length, 3);
+  assert.match(f.lines[0].designation, /Blanc M×12 L×10 · Bleu marine M×8/);
+});

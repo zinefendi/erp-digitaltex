@@ -4,6 +4,7 @@ import { attachDatePickers, isoToday, isoToFr, addDays } from './datepick.js';
 import { buildReceipt, dt, amountWords, cur, money } from './docs-pdf.js';
 import { buildDocDT, dataFacture, dataBL } from './docs-dt.js';
 import { attachRefPicker } from './refpick.js';
+import { ouvrirGrille, totalDetail, resumeDetail, sansResume, eclater } from './grille.js';
 import { staffList, gset, nextNumber, peekNumber, ensureClient, clientSnap, orderTotal, advancesTotal, delivered, deliveryState, invoicesOf, invoicedLines, advanceUsed, paidOf, invoiceState, orderState, groupInvoiceLines, invoiceTotals, rid, r3, invOrderIds, lineOrderId, invBlIds, blInvoiced, blsToInvoice, invoiceGroups, groupTitle } from './gestion-core.js';
 
 const D = window.uniformDesktop;
@@ -28,10 +29,13 @@ async function loadArticles() { if (D.articles) { try { ART = (await D.articles(
 const artTTC = (a) => r3((+a.prix_ht || 0) * (1 + (+a.tva || 0) / 100));
 // 0.10.1 : saisie par référence (produits finis + articles), banques tunisiennes, prix affichés H.T.
 let REFS = [], BANKS = [];
+// 0.14.0 : couleurs du catalogue (Paramètres › Catalogue › Couleurs) et grille de tailles d'une référence
+const couleursCat = () => { const s = (cat && cat.shop) || {}; const L = [...(s.colors || []), ...Object.values(s.trimColors || {}).flat()].filter((c) => Array.isArray(c) && c[0]); const vu = new Set(); return L.filter((c) => !vu.has(c[0]) && vu.add(c[0])); };
+const taillesDe = (ref) => { const r = REFS.find((x) => x.ref === ref); if (r && r.tailles && r.tailles.length) return r.tailles; const a = ((cat && cat.shop && cat.shop.articles) || {})[ref]; return (a && a.sizes) || []; };
 async function loadRefs() {
   const [P, C] = await Promise.all([D.produits ? D.produits() : [], D.codesArticle ? D.codesArticle() : []]);
   const lib = Object.fromEntries((C || []).map((c) => [c.code, c.libelle]));
-  REFS = [...(P || []).map((p) => ({ ref: p.reference, designation: [lib[p.code_article] || p.code_article, p.client_nom].filter(Boolean).join(' · '), type: 'Produit fini', ht: p.prix_ht ?? null, service: false })),
+  REFS = [...(P || []).map((p) => ({ ref: p.reference, designation: [lib[p.code_article] || p.code_article, p.client_nom].filter(Boolean).join(' · '), type: 'Produit fini', ht: p.prix_ht ?? null, service: false, tailles: Array.isArray(p.taillant) ? p.taillant : [] })),
     ...ART.map((a) => ({ ref: a.code, designation: a.designation, type: a.type === 'prestation' ? 'Prestation' : 'Article', ht: a.prix_ht ?? null, service: a.type === 'prestation', artType: a.type, unite: a.unite }))];
 }
 async function loadBanks() { try { BANKS = D.banques ? (await D.banques()).filter((b) => b.actif !== false) : []; } catch (_) { BANKS = []; } }
@@ -284,7 +288,7 @@ async function act(k, btn) {
     const r = await ask({ title: `Ajouter des lignes · commande ${o.number}`, wide: true, okLabel: 'Ajouter', fields: [{ k: 'lines', type: 'invlines', value: { lines: [blankLine(true)], cs: true, remise: false, noTotals: true, orderId: o.id, tva: G.tva, timbre: 0, fodec: G.fodec } }] });
     if (!r) return;
     const L = r.lines.lines.filter((l) => String(l.designation).trim() && +l.qty > 0); if (!L.length) return;
-    for (const l of L) { const y = { id: rid(), src: l.article ? 'article' : 'manual', article: l.article || '', artType: l.artType || '', designation: l.designation.trim(), staff: l.staff || '', color: (l.color || '').trim(), size: (l.size || '').trim(), qty: Math.max(0, Math.floor(+l.qty || 0)), service: !!l.service }; y.pu = r3((+l.pu || 0) * kTTC(y)); o.lines.push(y); }
+    for (const l of L) for (const y of eclater(l, (z, c, t, q) => ({ id: rid(), src: z.article ? 'article' : 'manual', article: z.article || '', artType: z.artType || '', designation: sansResume(z.designation), staff: z.staff || '', color: String(c || '').trim(), size: String(t || '').trim(), qty: Math.max(0, Math.floor(+q || 0)), service: !!z.service }))) { y.pu = r3((+l.pu || 0) * kTTC(y)); if (y.qty > 0) o.lines.push(y); } // 0.14.0 : une ligne par couleur × taille
     await saveOrder(o); toast(`${L.length} ligne(s) ajoutée(s).`);
   }
   else if (k === 'fichejoin' && o) {
@@ -360,7 +364,7 @@ async function newBLDirect() {
   const L = r.lines.lines.filter((l) => String(l.designation).trim() && +l.qty > 0);
   if (!L.some((l) => !l.service)) return toast('Le BL doit contenir au moins une ligne livrable (hors prestation).', true);
   const c = await ensureClient(D, r.client), client = clientSnap(c), date = r.date || today;
-  const lines = L.map((l) => { const y = { id: rid(), src: l.article ? 'article' : 'manual', article: l.article || '', artType: l.artType || '', designation: l.designation.trim(), staff: l.staff || '', color: (l.color || '').trim(), size: (l.size || '').trim(), qty: Math.max(0, Math.floor(+l.qty || 0)), service: !!l.service }; y.pu = r3((+l.pu || 0) * kTTC(y)); return y; });
+  const lines = L.flatMap((l) => eclater(l, (z, c, t, q) => ({ id: rid(), src: z.article ? 'article' : 'manual', article: z.article || '', artType: z.artType || '', designation: sansResume(z.designation), staff: z.staff || '', color: String(c || '').trim(), size: String(t || '').trim(), qty: Math.max(0, Math.floor(+q || 0)), service: !!z.service })).map((y) => { y.pu = r3((+l.pu || 0) * kTTC(y)); return y; }).filter((y) => y.qty > 0)); // 0.14.0 : une ligne par couleur × taille
   const ord = await put('orders', { number: await nextNumber(D, cat, 'order', date), clientPO: r.clientPO.trim(), client, date, delivery: date, lines, advances: [], products: [], status: 'en_cours', origine: 'bl_direct', total: 0 });
   const bl = await put('bls', { number: await nextNumber(D, cat, 'bl', date), date, orderId: ord.id, orderNumber: ord.number, clientPO: ord.clientPO || '', client,
     lines: lines.filter((l) => !l.service).map((l) => ({ lineId: l.id, article: l.article, designation: l.designation, staff: l.staff, color: l.color, size: l.size, qty: l.qty })), note: (r.note || '').trim(), status: 'livre' });
@@ -479,7 +483,7 @@ async function newInvoice(o, bl, multi) {
   const POs = [...new Set((multi ? multi.bls.map((b) => b.clientPO || (db.orders.find((x) => x.id === b.orderId) || {}).clientPO || '') : [o ? o.clientPO || '' : r.clientPO.trim()]).filter(Boolean))];
   const inv = { date: r.date, due: r.due, orderId: o ? o.id : '', orderNumber: multi ? MO.map((x) => x.number).join(', ') : o ? o.number : '', clientPO: POs.join(', '), blIds, blNumbers: blIds.map((id) => db.bls.find((b) => b.id === id).number), client,
     ...(multi ? { orderIds: MO.map((x) => x.id), orderNumbers: MO.map((x) => x.number), blDates: blIds.map((id) => db.bls.find((b) => b.id === id).date) } : {}),
-    lines: L.map(({ studio, ...l }) => ({ ...l, qty: +l.qty, pu: r3(+l.pu), remise: Math.min(100, Math.max(0, +l.remise || 0)) })), tva: EXP ? 0 : +r.lines.tva, timbre: EXP ? 0 : +r.lines.timbre, fodec: EXP ? 0 : +G.fodec || 0, pricesTTC: false, advance: 0, payments: [], paymentMode: r.paymentMode, note: r.note.trim(), status: 'validee',
+    lines: L.map(({ studio, ...l }) => ({ ...l, ...(Array.isArray(l.detail) && l.detail.length ? { detail: l.detail, qty: totalDetail(l.detail), designation: `${sansResume(l.designation)} (${resumeDetail(l.detail)})` } : { qty: +l.qty }), pu: r3(+l.pu), remise: Math.min(100, Math.max(0, +l.remise || 0)) })), tva: EXP ? 0 : +r.lines.tva, timbre: EXP ? 0 : +r.lines.timbre, fodec: EXP ? 0 : +G.fodec || 0, pricesTTC: false, advance: 0, payments: [], paymentMode: r.paymentMode, note: r.note.trim(), status: 'validee',
     ...(EXP ? { currency: r00.kind, export: true, incoterm: r.incoterm || '' } : {}), ...(r.ttnRef.trim() ? { ttnRef: r.ttnRef.trim() } : {}) };
   inv.advance = EXP ? 0 : r3(Math.min(Math.max(0, +r.advance || 0), advLeft || (o ? 0 : 0), invoiceTotals(inv).net));
   if (multi && inv.advance > 0) { let rest = inv.advance; inv.advanceBy = {}; for (const x of MO) { const a = r3(Math.min(rest, advBy[x.id] || 0)); if (a > 0) { inv.advanceBy[x.id] = a; rest = r3(rest - a); } } }
@@ -521,7 +525,7 @@ async function editInvoice(i0) {
   const cap = capsFor(i) || {};
   const ttc = i.pricesTTC !== false, kI = (l) => (ttc ? (1 + (+i.tva || 0) / 100) * (l.service || l.artType === 'prestation' ? 1 : 1 + (+i.fodec || 0) / 100) : 1);
   const st = new Set(invOrderIds(i).flatMap((id) => [...studioIds(db.orders.find((x) => x.id === id))]));
-  const x0 = { lines: JSON.parse(JSON.stringify(i.lines || [])).map((l) => ({ ...l, _pu0: l.pu, _ht0: r3((+l.pu || 0) / kI(l)), pu: r3((+l.pu || 0) / kI(l)), ...((l.lineIds || []).some((id) => st.has(id)) ? { studio: true } : {}) })), tva: +i.tva || 0, timbre: +i.timbre || 0, fodec: +i.fodec || 0, pricesTTC: false, locked: true, caps: cap, orderId: i.orderId || '', groups: invBlIds(i).length > 1 };
+  const x0 = { lines: JSON.parse(JSON.stringify(i.lines || [])).map((l) => ({ ...l, ...(Array.isArray(l.detail) && l.detail.length ? { designation: sansResume(l.designation) } : {}), _pu0: l.pu, _ht0: r3((+l.pu || 0) / kI(l)), pu: r3((+l.pu || 0) / kI(l)), ...((l.lineIds || []).some((id) => st.has(id)) ? { studio: true } : {}) })), tva: +i.tva || 0, timbre: +i.timbre || 0, fodec: +i.fodec || 0, pricesTTC: false, locked: true, caps: cap, orderId: i.orderId || '', groups: invBlIds(i).length > 1 };
   const r = await ask({ title: `Modifier la facture ${i.number}`, wide: true, okLabel: 'Enregistrer les modifications',
     text: 'Vous pouvez corriger la désignation, la quantité, le PRIX H.T. et la remise, ou supprimer une ligne (lignes « infographie » : prix et remise seulement). Le numéro, la date, le client et les taux ne changent pas. Chaque modification est tracée (journal d’audit). Une facture réglée se corrige par un avoir.',
     fields: [{ k: 'lines', type: 'invlines', value: x0 }] });
@@ -531,6 +535,7 @@ async function editInvoice(i0) {
   if (L.some((l) => !String(l.designation).trim())) return toast('Chaque ligne doit avoir une désignation.', true);
   const rec = { ...i, lines: L.map(({ studio, _pu0, _ht0, ...l }) => {
     const y = { ...l, qty: +l.qty, pu: _pu0 !== undefined && r3(+l.pu) === _ht0 ? _pu0 : r3(+l.pu * kI(l)), remise: Math.min(100, Math.max(0, +l.remise || 0)) };
+    if (Array.isArray(l.detail) && l.detail.length && !(l.lineIds || []).length) { y.qty = totalDetail(l.detail); y.designation = `${sansResume(l.designation)} (${resumeDetail(l.detail)})`; } // 0.14.0
     if ((l.lineIds || []).length === 1) y.qtyBy = { [l.lineIds[0]]: y.qty }; // une seule taille : la quantité saisie est celle de la taille
     if ((l.lineIds || []).length > 1) { // libellé « (M×6, L×4) » remis à jour
       const o = db.orders.find((z) => z.id === lineOrderId(i, l)), sz = (l.lineIds || []).map((id) => [o && (o.lines.find((z) => z.id === id) || {}).size, +y.qtyBy[id] || 0]).filter(([a, q]) => a && q > 0);
@@ -573,10 +578,10 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
       if (f.type === 'invlines') { const x = v[f.k], cs = !!x.cs, rem = x.remise !== false;
         const row = (l, i) => { const lk = !!l.studio;
           return `<tr ${ficheAttr(l.article, l.orderId || x.orderId)}><td class="refc"><input data-il="${i}" data-c="article" value="${esc(l.article || '')}" placeholder="Réf." autocomplete="off" ${lk ? 'readonly' : ''}></td>
-            <td><input data-il="${i}" data-c="designation" value="${esc(l.designation)}" ${lk ? 'readonly' : ''}>${lk ? '<span class="tag" title="Commande saisie en Infographie : seuls le prix et la remise se modifient">infographie</span>' : ''}</td>
+            <td><input data-il="${i}" data-c="designation" value="${esc(l.designation)}" ${lk ? 'readonly' : ''}>${lk ? '<span class="tag" title="Commande saisie en Infographie : seuls le prix et la remise se modifient">infographie</span>' : ''}${!cs && Array.isArray(l.detail) && l.detail.length ? `<div><button type="button" class="linkb small" data-ilgr="${i}" title="Modifier (F2)">${esc(resumeDetail(l.detail))}</button></div>` : ''}</td>
             <td><select data-il="${i}" data-c="staff" ${lk ? 'disabled' : ''}><option value="">—</option>${[...new Set([...staffs, l.staff].filter(Boolean))].map((s2) => `<option ${s2 === l.staff ? 'selected' : ''}>${esc(s2)}</option>`).join('')}</select></td>
-            ${cs ? `<td><input data-il="${i}" data-c="color" value="${esc(l.color || '')}" class="w-s"></td><td><input data-il="${i}" data-c="size" value="${esc(l.size || '')}" class="w-xs"></td>` : ''}
-            <td class="n">${l.qtyBy && Object.keys(l.qtyBy).length > 1 ? `<button type="button" class="btn sm ghost" data-ilsz="${i}" title="Quantités par taille" ${lk ? 'disabled' : ''}>${l.qty}${lk ? '' : ' ✎'}</button>` : `<input type="number" min="0" step="1" data-il="${i}" data-c="qty" value="${l.qty}" ${lk ? 'readonly' : ''}>`}</td>
+            ${cs ? (Array.isArray(l.detail) && l.detail.length ? `<td colspan="2"><button type="button" class="linkb small" data-ilgr="${i}" title="Modifier les quantités par couleur et taille (F2)">${esc(resumeDetail(l.detail))}</button></td>` : `<td><input data-il="${i}" data-c="color" value="${esc(l.color || '')}" class="w-s"></td><td><input data-il="${i}" data-c="size" value="${esc(l.size || '')}" class="w-xs"></td>`) : ''}
+            <td class="n">${!lk && !l.lineIds && !l.service && x.grille !== false ? `<button type="button" class="btn sm ghost grb" data-ilgr="${i}" title="Quantités par couleur et taille (F2)">${Array.isArray(l.detail) && l.detail.length ? l.qty + ' ▦' : '▦'}</button>` : ''}${Array.isArray(l.detail) && l.detail.length && !l.lineIds ? '' : l.qtyBy && Object.keys(l.qtyBy).length > 1 ? `<button type="button" class="btn sm ghost" data-ilsz="${i}" title="Quantités par taille" ${lk ? 'disabled' : ''}>${l.qty}${lk ? '' : ' ✎'}</button>` : `<input type="number" min="0" step="1" data-il="${i}" data-c="qty" value="${l.qty}" ${lk ? 'readonly' : ''}>`}</td>
             <td class="n"><input type="number" min="0" step="0.001" data-il="${i}" data-c="pu" value="${l.pu}"></td>
             ${rem ? `<td class="n"><input type="number" min="0" max="100" step="1" data-il="${i}" data-c="remise" value="${l.remise || 0}"></td>` : ''}
             <td class="n b" data-lt="${i}">${dt(lineHT(l))}</td><td>${lk ? '' : `<button type="button" class="ib" data-ildel="${i}" title="Supprimer la ligne">✕</button>`}</td></tr>`; };
@@ -600,11 +605,24 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
       estRef: (el) => el.dataset.c === 'article' && el.dataset.il !== undefined,
       choisir: (el, r) => { const x = v[inv().k], l = x.lines[+el.dataset.il]; if (!l) return;
         Object.assign(l, { article: r.ref, designation: r.designation, ...(r.ht !== null && r.ht !== undefined ? { pu: r3(+r.ht) } : {}), ...(r.service ? { service: true, artType: 'prestation' } : { service: false, artType: r.artType || (r.type === 'Produit fini' ? 'produit_fini' : '') }) });
-        draw(); setTimeout(() => { const nx = dlg.querySelector(`[data-il="${el.dataset.il}"][data-c="qty"]`); if (nx) { nx.focus(); nx.select && nx.select(); } }, 60); },
+        draw(); const x2 = v[inv().k]; if (x2.grille !== false && !x2.fixed && !r.service && taillesDe(r.ref).length > 1 && !(l.detail && l.detail.length)) { setTimeout(() => grilleLigne(+el.dataset.il), 60); return; } setTimeout(() => { const nx = dlg.querySelector(`[data-il="${el.dataset.il}"][data-c="qty"]`); if (nx) { nx.focus(); nx.select && nx.select(); } }, 60); },
     });
     const closePop = () => RP.fermer();
+    // 0.14.0 : fenêtre « couleurs × tailles » d'une ligne ; le total va dans Qté, le détail reste sur la ligne
+    const grilleLigne = async (i) => {
+      const x = v[inv().k], l = x.lines[i]; if (!l) return;
+      if (!l.article && !String(l.designation || '').trim()) { toast('Choisissez d’abord le produit (Réf.) ou saisissez la désignation.', true); const a = dlg.querySelector(`[data-il="${i}"][data-c="article"]`); if (a) a.focus(); return; }
+      const d0 = Array.isArray(l.detail) && l.detail.length ? l.detail : (+l.qty > 0 && (l.color || l.size) ? [{ couleur: l.color || '', taille: l.size || '', qte: +l.qty }] : []);
+      const r = await ouvrirGrille({ titre: `${l.article ? l.article + ' · ' : ''}${sansResume(l.designation) || 'Ligne ' + (i + 1)}`, tailles: taillesDe(l.article), couleurs: couleursCat(), detail: d0, hote: dlg });
+      if (!r) return;
+      if (!r.length) { delete l.detail; l.qty = 0; }
+      else if (r.length === 1) { delete l.detail; l.color = r[0].couleur; l.size = r[0].taille; l.qty = r[0].qte; }
+      else { l.detail = r; l.qty = totalDetail(r); l.color = ''; l.size = ''; }
+      l.designation = sansResume(l.designation);
+      draw(); const nx = dlg.querySelector(`[data-il="${i}"][data-c="pu"]`); if (nx) { nx.focus(); nx.select && nx.select(); }
+    };
     const done = (r) => { RP.detacher(); ASK_OPEN = false; const m = $('#dlgmin'); if (m) m.remove(); dlg.hidden = true; dlg.classList.remove('mini'); dlg.innerHTML = ''; dlg.oninput = dlg.onchange = dlg.onclick = dlg.onsubmit = null; dlg.removeEventListener('focusout', fo); window.removeEventListener('keydown', ek); resolve(r); };
-    const ek = (e) => { if (mini) return; if (e.key === 'Escape') { if (RP.ouvert()) { closePop(); return; } if (!document.querySelector('.dp-pop') && confirm('Fermer sans enregistrer ?')) done(null); } };
+    const ek = (e) => { if (mini) return; if (e.key === 'F2' && inv() && !document.getElementById('grillepop')) { const a = document.activeElement, il = a && a.dataset && a.dataset.il; if (il !== undefined && dlg.contains(a)) { e.preventDefault(); grilleLigne(+il); } return; } if (document.getElementById('grillepop')) return; if (e.key === 'Escape') { if (RP.ouvert()) { closePop(); return; } if (!document.querySelector('.dp-pop') && confirm('Fermer sans enregistrer ?')) done(null); } };
     const fo = () => {};
     const minimize = () => { mini = true; closePop(); dlg.classList.add('mini'); const bar = document.createElement('button'); bar.id = 'dlgmin'; bar.type = 'button'; bar.innerHTML = `<span>▲</span> ${esc(title)} <small>(réduite — cliquez pour reprendre)</small>`; bar.onclick = () => { mini = false; dlg.classList.remove('mini'); bar.remove(); }; document.body.appendChild(bar); };
     const upd = (e) => {
@@ -632,6 +650,7 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
       else if (b.dataset.none) { const f = fields.find((x) => x.k === b.dataset.none); for (const r of f.rows) v[f.k][r.id] = 0; draw(); }
       else if (b.hasAttribute('data-iladd')) { const x = v[inv().k]; x.lines.push(blankLine(x.cs)); draw(); const l = dlg.querySelectorAll('[data-c="article"]'); if (l.length) l[l.length - 1].focus(); }
       else if (b.dataset.ildel !== undefined) { v[inv().k].lines.splice(+b.dataset.ildel, 1); draw(); }
+      else if (b.dataset.ilgr !== undefined) grilleLigne(+b.dataset.ilgr);
       else if (b.dataset.ilsz !== undefined) { // quantités par taille d'une ligne regroupée (plafond : reste à facturer de la commande)
         const x = v[inv().k], l = x.lines[+b.dataset.ilsz], caps = x.caps || {};
         for (const id of l.lineIds || []) {

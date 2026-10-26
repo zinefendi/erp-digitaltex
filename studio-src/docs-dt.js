@@ -202,10 +202,11 @@ export function dataBL(bl, order, g = {}, { clientCode } = {}) {
   };
 }
 
+const resumeDetailDT = (d) => { const m = new Map(); for (const x of d || []) { if (!(+x.qte > 0)) continue; const k = x.couleur || ''; if (!m.has(k)) m.set(k, []); m.get(k).push(`${x.taille || 'TU'}×${+x.qte}`); } return [...m.entries()].map(([c, t]) => `${c ? c + ' ' : ''}${t.join(' ')}`).join(' · '); };
 /** Devis, proforma, avoir (module Ventes) → document DIGITAL-TEX. */
 export function dataVente(type, d, { clientCode, societe } = {}) {
   const inv = { tva: +d.tva || 0, fodec: +d.fodec || 0, timbre: +d.timbre || 0, pricesTTC: !!d.prix_ttc,
-    lines: (d.lignes || []).map((l) => ({ designation: [l.designation, l.couleur, l.taille].filter(Boolean).join(' · '), qty: +l.qte || 0, pu: +l.pu || 0, remise: +l.remise || 0, article: l.produit || '', service: !!l.service })) };
+    lines: (d.lignes || []).map((l) => ({ designation: [l.designation, l.couleur, l.taille].filter(Boolean).join(' · ') + (Array.isArray(l.detail) && l.detail.length ? ' (' + resumeDetailDT(l.detail) + ')' : ''), qty: +l.qte || 0, pu: +l.pu || 0, remise: +l.remise || 0, article: l.produit || '', service: !!l.service })) };
   const X = invoiceTotals(inv), exp = d.type_client === 'export' || (d.devise && d.devise !== 'DT');
   const en = d.langue === 'en';
   const titre = { devis: en ? 'QUOTATION' : 'DEVIS', proformas: en ? 'PROFORMA INVOICE' : 'FACTURE PROFORMA', avoirs: en ? 'CREDIT NOTE' : 'AVOIR' }[type];

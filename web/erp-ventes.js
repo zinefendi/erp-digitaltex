@@ -110,8 +110,8 @@ async function formDevisPro(type, x, clients, produits) {
       ${lignes.map((l, i) => `<tr data-fiche="${esc(l.produit || '')}" title="${l.produit ? 'Double-clic : fiche technique' : ''}"><td><input data-l="${i}" data-c="produit" autocomplete="off" value=""${esc(l.produit || '')}" placeholder="${l.service ? 'Prestation' : 'P00126H'}" style="width:92px;text-transform:uppercase" ${dis || (l.service ? 'disabled' : '')}></td>
         <td><input data-l="${i}" data-c="designation" value="${esc(l.designation)}" maxlength="300" style="width:100%;min-width:150px" ${dis}>${l.service ? '<div class="mute small">Prestation (transport, frais…)</div>' : ''}</td>
         <td><select data-l="${i}" data-c="staff" style="max-width:130px" ${dis}><option value="">—</option>${[...new Set([...STAFFS, l.staff].filter(Boolean))].map((s2) => `<option ${s2 === l.staff ? 'selected' : ''}>${esc(s2)}</option>`).join('')}</select></td>
-        <td><input data-l="${i}" data-c="couleur" value="${esc(l.couleur || '')}" style="width:72px" ${dis}></td><td><input data-l="${i}" data-c="taille" value="${esc(l.taille || '')}" style="width:48px" ${dis}></td>
-        <td class="n"><input data-l="${i}" data-c="qte" type="number" step="any" min="0" value="${l.qte}" style="width:62px" ${dis}></td>
+        ${Array.isArray(l.detail) && l.detail.length ? `<td colspan="2"><button type="button" class="btn ghost sm" data-gr="${i}" style="text-align:left;white-space:normal;max-width:260px" ${dis} title="Quantités par couleur et taille (F2)">${esc(window.Grille ? window.Grille.resumeDetail(l.detail) : '')}</button></td>` : `<td><input data-l="${i}" data-c="couleur" value="${esc(l.couleur || '')}" style="width:72px" ${dis}></td><td><input data-l="${i}" data-c="taille" value="${esc(l.taille || '')}" style="width:48px" ${dis}></td>`}
+        <td class="n" style="white-space:nowrap">${l.service || !window.Grille ? '' : `<button type="button" class="btn ghost sm" data-gr="${i}" ${dis} title="Quantités par couleur et taille (F2)" style="padding:4px 7px">▦</button> `}${Array.isArray(l.detail) && l.detail.length ? `<b>${l.qte}</b>` : `<input data-l="${i}" data-c="qte" type="number" step="any" min="0" value="${l.qte}" style="width:62px" ${dis}>`}</td>
         ${prix ? `<td class="n"><input data-l="${i}" data-c="pu" type="number" step="0.001" min="0" value="${l.pu ?? 0}" style="width:84px" ${dis}></td><td class="n"><input data-l="${i}" data-c="remise" type="number" step="0.5" min="0" max="100" value="${l.remise || 0}" style="width:52px" ${dis}></td>
         <td class="n" data-tot>${md((+l.qte || 0) * (+l.pu || 0) * (1 - (+l.remise || 0) / 100), d)}</td>` : ''}
         <td>${ro || lignes.length < 2 ? '' : `<button type="button" class="btn ghost sm" data-del="${i}" aria-label="Supprimer la ligne">✕</button>`}</td></tr>`).join('')}</tbody></table>
@@ -180,7 +180,7 @@ async function formDevisPro(type, x, clients, produits) {
     if (!cl) throw new Error('Choisissez le client.');
     const body = { date: f.date.value, ref_client: f.ref_client.value.trim(), langue: f.langue.value, conditions: f.conditions.value.trim(), note: f.note.value.trim(),
       prix_ttc: ttcDoc,
-      lignes: lignes.filter((l) => String(l.designation).trim()).map((l) => ({ produit: l.service ? '' : String(l.produit || '').trim().toUpperCase(), designation: String(l.designation).trim(), staff: l.staff || '', couleur: l.couleur || '', taille: l.taille || '', qte: +l.qte || 0,
+      lignes: lignes.filter((l) => String(l.designation).trim()).map((l) => ({ produit: l.service ? '' : String(l.produit || '').trim().toUpperCase(), designation: String(l.designation).trim(), staff: l.staff || '', couleur: l.couleur || '', taille: l.taille || '', qte: +l.qte || 0, ...(Array.isArray(l.detail) && l.detail.length ? { detail: l.detail } : {}),
         pu: l._pu0 !== undefined && r3(+l.pu) === l._ht0 ? l._pu0 : r3((+l.pu || 0) * kL(l)), remise: +l.remise || 0, service: !!l.service })) };
     if (!x?.origine_id) body.client_id = cl.id;
     body.validite = f.validite.value || null;
@@ -196,6 +196,20 @@ async function formDevisPro(type, x, clients, produits) {
   // 0.13.0 : sélecteur de référence commun (liste complète au clic, filtrée à la frappe, 6 lignes, ↑ ↓ Entrée) — produits finis + articles / prestations
   const REFS = [...produits.filter((p) => !p.annule).map((p) => ({ ref: p.reference, designation: `${libCode[p.code_article] || p.code_article}${p.client_nom ? ' — ' + p.client_nom : ''}`, type: 'Produit fini', ht: p.prix_ht ?? null, pf: true })),
     ...(Array.isArray(arts) ? arts : []).filter((a) => a.actif !== false).map((a) => ({ ref: a.code, designation: a.designation, type: a.type === 'prestation' ? 'Prestation' : 'Article', ht: a.prix_ht ?? null, service: a.type === 'prestation' }))];
+  // 0.14.0 : fenêtre « couleurs × tailles » d'une ligne (bouton ▦ ou F2 dans la ligne) ; le total va dans Qté
+  const couleursCat = () => { const sh = (cat && cat.shop) || {}; const vu = new Set(); return [...(sh.colors || []), ...Object.values(sh.trimColors || {}).flat()].filter((c) => Array.isArray(c) && c[0] && !vu.has(c[0]) && vu.add(c[0])); };
+  const grilleLigne = async (i) => {
+    const l = lignes[i]; if (!l || ro || l.service || !window.Grille) return;
+    if (!l.produit && !String(l.designation || '').trim()) { toast('Choisissez d’abord le produit (Réf.) ou saisissez la désignation.', true); return; }
+    const p = pf(l.produit), d0 = Array.isArray(l.detail) && l.detail.length ? l.detail : (+l.qte > 0 && (l.couleur || l.taille) ? [{ couleur: l.couleur || '', taille: l.taille || '', qte: +l.qte }] : []);
+    const r = await window.Grille.ouvrirGrille({ titre: `${l.produit ? l.produit + ' · ' : ''}${l.designation || 'Ligne ' + (i + 1)}`, tailles: (p && p.taillant) || [], couleurs: couleursCat(), detail: d0, hote: z.closest('dialog') || document.body });
+    if (!r) return;
+    if (!r.length) { delete l.detail; l.qte = 0; } else if (r.length === 1) { delete l.detail; l.couleur = r[0].couleur; l.taille = r[0].taille; l.qte = r[0].qte; }
+    else { l.detail = r; l.qte = window.Grille.totalDetail(r); l.couleur = ''; l.taille = ''; }
+    dessL(); const nx = z.querySelector(`[data-l="${i}"][data-c="pu"]`); if (nx) { nx.focus(); nx.select && nx.select(); }
+  };
+  z.addEventListener('click', (e) => { const b = e.target.closest('[data-gr]'); if (b) { e.preventDefault(); grilleLigne(+b.dataset.gr); } });
+  z.addEventListener('keydown', (e) => { if (e.key !== 'F2' || document.getElementById('grillepop')) return; const a = e.target.closest('[data-l]'); if (a) { e.preventDefault(); grilleLigne(+a.dataset.l); } });
   if (window.RefPick && !ro) {
     const RP = window.RefPick.attachRefPicker(z, {
       getItems: () => REFS, prix: () => prix,
@@ -206,7 +220,9 @@ async function formDevisPro(type, x, clients, produits) {
         if (r.pf) { l.produit = r.ref; l.service = false; l.designation = r.designation; }
         else { l.produit = ''; l.service = !!r.service; l.designation = `${r.ref} · ${r.designation}`; }
         if (prix && r.ht !== null && r.ht !== undefined) l.pu = conv(+r.ht);
-        dessL(); const nx = z.querySelector(`[data-l="${el.dataset.l}"][data-c="qte"]`); if (nx) { nx.focus(); nx.select && nx.select(); }
+        dessL();
+        if (r.pf && window.Grille && ((pf(r.ref) || {}).taillant || []).length > 1 && !(l.detail && l.detail.length)) { setTimeout(() => grilleLigne(+el.dataset.l), 60); return; }
+        const nx = z.querySelector(`[data-l="${el.dataset.l}"][data-c="qte"]`); if (nx) { nx.focus(); nx.select && nx.select(); }
       },
     });
     fen.addEventListener('close', () => RP.detacher(), { once: true });

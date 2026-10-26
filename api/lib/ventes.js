@@ -64,4 +64,11 @@ async function verrouAutre(db, entite, id, utilisateurId) {
 const libererVerrou = (db, entite, id, utilisateurId) =>
   db.query('delete from noyau.verrous where entite = $1 and entite_id = $2 and utilisateur_id = $3', [entite, String(id), utilisateurId]);
 
-module.exports = { r3, REF_PF, BAIL_MIN, totaux, puHtDinars, lignesEnPerte, prendreVerrou, verrouAutre, libererVerrou };
+/** 0.14.0 : résumé « Blanc M×12 L×10 · Marine M×8 » d'un détail couleurs × tailles. */
+function resumeDetail(d) {
+  const m = new Map();
+  for (const x of d || []) { if (!(+x.qte > 0)) continue; const k = x.couleur || ''; if (!m.has(k)) m.set(k, []); m.get(k).push(`${x.taille || 'TU'}×${+x.qte}`); }
+  return [...m.entries()].map(([c, t]) => `${c ? c + ' ' : ''}${t.join(' ')}`).join(' · ');
+}
+
+module.exports = { resumeDetail, r3, REF_PF, BAIL_MIN, totaux, puHtDinars, lignesEnPerte, prendreVerrou, verrouAutre, libererVerrou };

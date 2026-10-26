@@ -122,3 +122,10 @@ Demandes de l'utilisateur du 22/10/2026 (module 02).
 
 ## 0.13.1 — 26/10/2026 — Réglage multi-BL pris en compte sans recharger
 - La Gestion relit les réglages (dont Paramètres › Factures › Facturation multi-BL) à chaque rafraîchissement et au clic sur « Facturer des BL » : plus besoin de F5 après un changement, y compris fait sur un autre poste. Vérifié au navigateur : activation, désactivation, persistance, refus pour un compte non administrateur.
+
+## 0.14.0 — 26/10/2026 — Fenêtre « couleurs × tailles » (commande, BL, facture, devis, proforma)
+- Bouton **▦** dans la case Qté de chaque ligne (ou **F2** dans la ligne) ; s'ouvre tout seul après le choix d'un produit fini qui a plusieurs tailles.
+- Tableau : une ligne par **couleur** (liste des couleurs du catalogue ou « Autre couleur… »), colonnes = **tailles du produit** (taillant), sinon grilles au choix : lettres XS→3XL / XS→4XL, numériques 36→56, enfant 2→16 ans, taille unique. Totaux par couleur, par taille et général en direct ; Tab / flèches / Entrée comme un tableur ; **saisie rapide** « M12 L10 XL5 » (ou « 42:5 ») sur la dernière couleur ; « Tout à zéro ». **Valider → Qté N** met le total dans Qté ; le résumé (« Blanc M×12 L×10 · Bleu marine M×8 ») s'affiche dans la ligne et se rouvre pour corriger.
+- Commande et BL direct : une ligne par couleur × taille (stock produits finis et livraisons partielles par taille). Facture libre, devis, proforma : une seule ligne avec le détail et le résumé dans la désignation (PDF). Devis/proforma → commande : éclatée par couleur × taille ; → facture : une ligne reliée à ses lignes de commande.
+- Serveur (devis/proforma) : détail contrôlé (quantités entières, pas de doublon couleur × taille, Qté = total du détail).
+- Fichiers : studio-src/grille.js (nouveau, aussi compilé en web/grille.js → window.Grille). Tests 114/114.
