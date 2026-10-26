@@ -54,7 +54,9 @@ async function load() {
   G = gset(cat); CO = cat.company || {};
   render();
 }
-D.db.onChange(async () => { db = await D.db.get(); render(true); });
+// 0.13.1 : les réglages (dont Paramètres › Factures › multi-BL) sont relus à chaque rafraîchissement, sans F5
+const relireReglages = async () => { try { cat = (await D.catalogue.get()).catalogue; G = gset(cat); CO = cat.company || {}; } catch (_) { /* garde les réglages connus */ } };
+D.db.onChange(async () => { db = await D.db.get(); await relireReglages(); render(true); });
 if (D.onNotify) D.onNotify(async (ch) => { if (ch === 'catalogue-saved') { cat = (await D.catalogue.get()).catalogue; G = gset(cat); CO = cat.company || {}; render(true); } });
 
 /* ------------------------------------------------------------------ rendu */
@@ -381,6 +383,7 @@ const sameClient = (a, b) => (a && a.id && b && b.id ? a.id === b.id : norm(a &&
  * puis lignes regroupées par BL (une ligne par BL, jamais fusionnées), avec les références BL / commande / BC client.
  */
 async function invoiceFromBLs(b0) {
+  await relireReglages(); // réglage multi-BL à jour au moment du clic (changé sur un autre poste)
   const libres = blsToInvoice(db);
   if (!libres.length) return toast('Aucun BL à facturer : tous les BL sont déjà facturés ou annulés.', true);
   let client = b0 ? b0.client : null;

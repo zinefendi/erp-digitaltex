@@ -119,3 +119,6 @@ Demandes de l'utilisateur du 22/10/2026 (module 02).
 - **Recherche produit** dans toutes les saisies de lignes (commande, BL direct, facture ; devis et proformas) : au clic dans Réf., liste de tous les produits enregistrés (produits finis, articles, prestations) ; filtre à chaque caractère (plusieurs mots possibles, texte surligné) ; 6 lignes visibles avec ascenseur ; ↑ ↓ / Page préc. suiv. pour le curseur, Entrée pour choisir, Échap pour fermer ; le curseur passe ensuite à la Qté.
 - Correctif : écrans Production (web) bloqués par une double déclaration de `qteF` (erp-production.js) ; serveur de dev : schéma `prod` remis à zéro.
 - Tests : 113/113 (2 nouveaux : facture multi-BL, interrupteur). Prochaine migration : 015.
+
+## 0.13.1 — 26/10/2026 — Réglage multi-BL pris en compte sans recharger
+- La Gestion relit les réglages (dont Paramètres › Factures › Facturation multi-BL) à chaque rafraîchissement et au clic sur « Facturer des BL » : plus besoin de F5 après un changement, y compris fait sur un autre poste. Vérifié au navigateur : activation, désactivation, persistance, refus pour un compte non administrateur.
