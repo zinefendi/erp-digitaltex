@@ -129,3 +129,10 @@ Demandes de l'utilisateur du 22/10/2026 (module 02).
 - Commande et BL direct : une ligne par couleur × taille (stock produits finis et livraisons partielles par taille). Facture libre, devis, proforma : une seule ligne avec le détail et le résumé dans la désignation (PDF). Devis/proforma → commande : éclatée par couleur × taille ; → facture : une ligne reliée à ses lignes de commande.
 - Serveur (devis/proforma) : détail contrôlé (quantités entières, pas de doublon couleur × taille, Qté = total du détail).
 - Fichiers : studio-src/grille.js (nouveau, aussi compilé en web/grille.js → window.Grille). Tests 114/114.
+
+## 0.14.1 — 26/10/2026 — Fenêtre « couleurs × tailles » partout où l'on saisit des quantités de produits
+- Grille en **mode plafonné** (couleurs et tailles fixes, reste affiché sous chaque case, saisie ramenée au maximum, bouton « Tout livrer / Tout facturer / Tout créditer ») :
+  - **BL d'une commande** : les lignes d'un même produit sont regroupées, bouton ▦ → au plus le reste à livrer de chaque couleur × taille ;
+  - **Facture d'une commande / d'un BL / multi-BL** et **modification de facture** : le bouton ▦ remplace les invites taille par taille (au plus le reste à facturer) ; tailles à 0 retirées de la ligne ;
+  - **Avoirs** (nouveau et modification) : bouton ▦ sur les lignes de facture à plusieurs couleurs / tailles → avoir par couleur × taille. Serveur : cases de la facture (détail saisi, ou tailles de la commande d'une ligne regroupée), au plus le facturé non encore crédité de chaque case (cumul des avoirs), quantité recalculée = total du détail ; GET creditable renvoie `cases`.
+- Saisie libre (commande, BL direct, facture libre, devis, proforma) : inchangée depuis 0.14.0. Tests 115/115.

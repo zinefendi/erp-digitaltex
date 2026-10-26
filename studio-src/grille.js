@@ -52,12 +52,14 @@ const CSS = `#grillepop{position:fixed;inset:0;z-index:10000;background:rgba(20,
 #grillepop .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--b2,#29669d);background:var(--b2,#29669d);color:#fff;font:600 13px "Instrument Sans",system-ui,sans-serif;padding:8px 14px;border-radius:10px;cursor:pointer;white-space:nowrap}
 #grillepop .btn.ghost{background:#fff;color:var(--b2,#29669d)} #grillepop .btn.sm{padding:5px 10px;font-size:12.5px}
 #grillepop .gp-f{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--rule,#dbe3ea);background:#fbfcfd}
+#grillepop td.q{position:relative} #grillepop small.mx{display:block;font-size:10.5px;color:var(--ink2,#5a6b7c);line-height:1.1} #grillepop input.trop{outline:2px solid #d9534f!important}
 #grillepop .hint{color:var(--ink2,#5a6b7c);font-size:12px}
 #grillepop .vide{color:var(--ink2,#5a6b7c);padding:16px;text-align:center}`;
 function css() { if (document.getElementById('grille-css')) return; const s = document.createElement('style'); s.id = 'grille-css'; s.textContent = CSS; document.head.appendChild(s); }
 
 /**
- * Ouvre la fenêtre. opt = { titre, tailles: [] (grille du produit), couleurs: [[nom, hex]], detail: [{couleur,taille,qte}], hote: élément où l'insérer }
+ * Ouvre la fenêtre. opt = { titre, tailles: [] (grille du produit), couleurs: [[nom, hex]], detail: [{couleur,taille,qte}], hote: élément où l'insérer,
+ *   limites: [{couleur,taille,max}] (0.14.1 : mode plafonné — BL, facture d'une commande, avoir : couleurs et tailles fixes, au plus « max » par case) }
  * Retourne une promesse : detail (tableau, éventuellement vide) ou null si annulé.
  */
 export function ouvrirGrille(opt = {}) {
@@ -65,7 +67,12 @@ export function ouvrirGrille(opt = {}) {
   return new Promise((resolve) => {
     const couleurs = (opt.couleurs || []).filter((c) => c && c[0]);
     const hexDe = (n) => (couleurs.find((c) => c[0].toLowerCase() === String(n).toLowerCase()) || [])[1] || '';
-    const grilles = [...(opt.tailles && opt.tailles.length ? [['produit', `Grille du produit (${opt.tailles.join(' ')})`, opt.tailles.map(String)]] : []), ...GRILLES];
+    // 0.14.1 : mode plafonné — cases autorisées et maximum par case
+    const LIM = Array.isArray(opt.limites) && opt.limites.length ? new Map(opt.limites.map((x) => [`${x.couleur || ''}¦${x.taille || 'TU'}`, Math.max(0, Math.floor(+x.max || 0))])) : null;
+    const maxDe = (c, t) => (LIM ? (LIM.has(`${c}¦${t}`) ? LIM.get(`${c}¦${t}`) : -1) : Infinity);
+    const ordreT = (arr) => { const ref = [...(opt.tailles || []).map(String), ...GRILLES.flatMap((g) => g[2])]; return [...arr].sort((a, b) => { const ia = ref.indexOf(a), ib = ref.indexOf(b); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || String(a).localeCompare(String(b), 'fr', { numeric: true }); }); };
+    const grilles = LIM ? [['lim', 'Tailles du document', ordreT([...new Set(opt.limites.map((x) => x.taille || 'TU'))])]]
+      : [...(opt.tailles && opt.tailles.length ? [['produit', `Grille du produit (${opt.tailles.join(' ')})`, opt.tailles.map(String)]] : []), ...GRILLES];
     const det = Array.isArray(opt.detail) ? opt.detail.filter((x) => +x.qte > 0) : [];
     // grille de départ : celle du produit ; sinon celle qui contient toutes les tailles déjà saisies ; sinon XS → 3XL
     const deja = [...new Set(det.map((x) => x.taille))];
@@ -73,6 +80,8 @@ export function ouvrirGrille(opt = {}) {
     let tailles = [...g[2], ...deja.filter((t) => !g[2].includes(t))];
     const lignes = []; // [{ c, q: {taille: n} }]
     for (const x of det) { let l = lignes.find((y) => y.c === (x.couleur || '')); if (!l) { l = { c: x.couleur || '', q: {} }; lignes.push(l); } l.q[x.taille || 'TU'] = (l.q[x.taille || 'TU'] || 0) + (+x.qte || 0); }
+    if (LIM) for (const c of [...new Set(opt.limites.map((x) => x.couleur || ''))]) if (!lignes.some((l) => l.c === c)) lignes.push({ c, q: {} });
+    if (LIM) lignes.sort((a, b) => [...LIM.keys()].findIndex((k) => k.startsWith(a.c + '¦')) - [...LIM.keys()].findIndex((k) => k.startsWith(b.c + '¦')));
     if (!lignes.length) lignes.push({ c: couleurs.length === 1 ? couleurs[0][0] : '', q: {} });
 
     const hote = opt.hote || document.body;
@@ -82,13 +91,13 @@ export function ouvrirGrille(opt = {}) {
     const dessiner = (focus) => {
       const col = tailles.map((t) => lignes.reduce((s, l) => s + (+l.q[t] || 0), 0)), tg = col.reduce((a, b) => a + b, 0);
       el.innerHTML = `<div class="gp"><div class="gp-h"><div><b>${esc(opt.titre || 'Quantités par couleur et par taille')}</b><small>Une ligne par couleur · tapez les quantités dans les cases (vides = 0)</small></div>
-          <label class="gp-l">Grille de tailles<select data-g>${grilles.map((x) => `<option value="${x[0]}" ${x[0] === g[0] ? 'selected' : ''}>${esc(x[1])}</option>`).join('')}</select></label></div>
+          ${LIM ? `<span class="gp-l">${esc(opt.sousTitre || 'Au plus le reste de chaque case')}</span>` : `<label class="gp-l">Grille de tailles<select data-g>${grilles.map((x) => `<option value="${x[0]}" ${x[0] === g[0] ? 'selected' : ''}>${esc(x[1])}</option>`).join('')}</select></label>`}</div>
         <div class="gp-c"><table><thead><tr><th class="l">Couleur</th>${tailles.map((t) => `<th>${esc(t)}</th>`).join('')}<th>Total</th><th></th></tr></thead><tbody>
-          ${lignes.map((l, i) => `<tr><td class="l"><div class="coul"><span class="dot" style="background:${esc(hexDe(l.c) || 'transparent')}"></span><select data-c="${i}">${opts(l.c)}</select></div></td>
-            ${tailles.map((t, k) => `<td class="q"><input data-i="${i}" data-k="${k}" inputmode="numeric" autocomplete="off" aria-label="${esc(l.c || 'Couleur')} ${esc(t)}" value="${+l.q[t] || ''}" class="${+l.q[t] ? 'v' : ''}"></td>`).join('')}
-            <td class="t" data-tl="${i}">${tailles.reduce((a, t) => a + (+l.q[t] || 0), 0)}</td><td>${lignes.length > 1 ? `<button type="button" class="x" data-del="${i}" title="Retirer cette couleur">✕</button>` : ''}</td></tr>`).join('')}</tbody>
+          ${lignes.map((l, i) => `<tr><td class="l"><div class="coul"><span class="dot" style="background:${esc(hexDe(l.c) || 'transparent')}"></span>${LIM ? `<span>${esc(l.c || '(sans couleur)')}</span>` : `<select data-c="${i}">${opts(l.c)}</select>`}</div></td>
+            ${tailles.map((t, k) => { const mx = maxDe(l.c, t); return mx < 0 ? `<td class="q"><span class="hint">—</span></td>` : `<td class="q"><input data-i="${i}" data-k="${k}" inputmode="numeric" autocomplete="off" aria-label="${esc(l.c || 'Couleur')} ${esc(t)}" value="${+l.q[t] || ''}" class="${+l.q[t] ? 'v' : ''}" ${Number.isFinite(mx) ? `placeholder="≤${mx}" title="Au plus ${mx}"` : ''}>${Number.isFinite(mx) ? `<small class="mx">/${mx}</small>` : ''}</td>`; }).join('')}
+            <td class="t" data-tl="${i}">${tailles.reduce((a, t) => a + (+l.q[t] || 0), 0)}</td><td>${lignes.length > 1 && !LIM ? `<button type="button" class="x" data-del="${i}" title="Retirer cette couleur">✕</button>` : ''}</td></tr>`).join('')}</tbody>
           <tfoot><tr><td class="l">Total</td>${col.map((v, k) => `<td data-tc="${k}">${v || ''}</td>`).join('')}<td class="tg" data-tg>${tg}</td><td></td></tr></tfoot></table>
-          <div class="gp-a"><button type="button" class="btn ghost sm" data-add>+ Couleur</button><input class="r" data-r placeholder="Saisie rapide pour la dernière couleur : M12 L10 XL5 puis Entrée"><button type="button" class="btn ghost sm" data-raz>Tout à zéro</button></div></div>
+          <div class="gp-a">${LIM ? `<button type="button" class="btn ghost sm" data-max>${esc(opt.libMax || 'Tout le reste')}</button>` : '<button type="button" class="btn ghost sm" data-add>+ Couleur</button>'}<input class="r" data-r placeholder="Saisie rapide pour la dernière couleur : M12 L10 XL5 puis Entrée"><button type="button" class="btn ghost sm" data-raz>Tout à zéro</button></div></div>
         <div class="gp-f"><span class="hint">Tab, flèches ou Entrée pour passer d’une case à l’autre · Échap pour annuler</span><span><button type="button" class="btn ghost" data-x>Annuler</button> <button type="button" class="btn" data-ok>Valider → Qté <span data-okt>${tg}</span></button></span></div></div>`;
       if (focus) { const n = el.querySelector(focus); if (n) { n.focus(); n.select && n.select(); } }
     };
@@ -100,14 +109,14 @@ export function ouvrirGrille(opt = {}) {
     const fin = (r) => { el.remove(); document.removeEventListener('keydown', esc_, true); resolve(r); };
     const valider = () => {
       const sansC = lignes.filter((l) => !l.c && tailles.some((t) => +l.q[t] > 0));
-      if (sansC.length && couleurs.length && !confirm('Une ligne a des quantités sans couleur choisie. Valider quand même (couleur vide) ?')) return;
+      if (sansC.length && couleurs.length && !LIM && !confirm('Une ligne a des quantités sans couleur choisie. Valider quand même (couleur vide) ?')) return;
       const out = []; for (const l of lignes) for (const t of tailles) if (+l.q[t] > 0) out.push({ couleur: l.c, taille: t, qte: +l.q[t] });
       fin(out);
     };
     const esc_ = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fin(null); } };
     el.addEventListener('input', (e) => {
       const t = e.target;
-      if (t.dataset.i !== undefined) { const v = ent(t.value); if (String(v || '') !== t.value) t.value = v || ''; lignes[+t.dataset.i].q[tailles[+t.dataset.k]] = v; t.classList.toggle('v', v > 0); majTotaux(); }
+      if (t.dataset.i !== undefined) { let v = ent(t.value); const mx = maxDe(lignes[+t.dataset.i].c, tailles[+t.dataset.k]); if (v > mx) { v = mx; t.classList.add('trop'); setTimeout(() => t.classList.remove('trop'), 900); } if (String(v || '') !== t.value) t.value = v || ''; lignes[+t.dataset.i].q[tailles[+t.dataset.k]] = v; t.classList.toggle('v', v > 0); majTotaux(); }
     });
     el.addEventListener('change', (e) => {
       const t = e.target;
@@ -128,8 +137,8 @@ export function ouvrirGrille(opt = {}) {
           let tt = m[1] || m[3]; const q = +(m[1] ? m[2] : m[4]);
           if (!tailles.includes(tt) && /^\d+A$/.test(tt) && tailles.includes(tt.slice(0, -1))) tt = tt.slice(0, -1);
           if (!tailles.includes(tt) && /^X{2,}L$/.test(tt) && tailles.includes(`${tt.length - 1}XL`)) tt = `${tt.length - 1}XL`;
-          if (!tailles.includes(tt)) continue;
-          l.q[tt] = q; n++;
+          if (!tailles.includes(tt) || maxDe(l.c, tt) < 0) continue;
+          l.q[tt] = Math.min(q, maxDe(l.c, tt)); n++;
         }
         dessiner('[data-r]'); if (!n) alert('Aucune taille reconnue. Exemple : M12 L10 XL5 (tailles de la grille affichée).');
         return;
@@ -142,7 +151,9 @@ export function ouvrirGrille(opt = {}) {
       let i = +t.dataset.i + d[0], k = +t.dataset.k + d[1];
       if (e.key === 'Enter' && k >= tailles.length) { i += 1; k = 0; }
       if (e.key === 'Enter' && i >= lignes.length) { el.querySelector('[data-ok]').focus(); return; }
-      const n = el.querySelector(`[data-i="${i}"][data-k="${k}"]`); if (n) { n.focus(); n.select(); }
+      let n = el.querySelector(`[data-i="${i}"][data-k="${k}"]`);
+      if (!n && LIM && (e.key === 'Enter' || e.key === 'ArrowRight')) { const all = [...el.querySelectorAll('input[data-i]')], p = all.indexOf(t); n = all[p + 1]; if (!n && e.key === 'Enter') { el.querySelector('[data-ok]').focus(); return; } }
+      if (n) { n.focus(); n.select(); }
     });
     el.addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) { if (e.target === el) fin(null); return; }
@@ -150,12 +161,13 @@ export function ouvrirGrille(opt = {}) {
       else if (b.hasAttribute('data-ok')) valider();
       else if (b.hasAttribute('data-add')) { const libre = couleurs.find((c) => !lignes.some((l) => l.c === c[0])); lignes.push({ c: '', q: {} }); dessiner(`[data-c="${lignes.length - 1}"]`); }
       else if (b.dataset.del !== undefined) { lignes.splice(+b.dataset.del, 1); dessiner(); }
+      else if (b.hasAttribute('data-max')) { for (const l of lignes) for (const t of tailles) { const mx = maxDe(l.c, t); if (mx > 0 && Number.isFinite(mx)) l.q[t] = mx; } dessiner('[data-ok]'); }
       else if (b.hasAttribute('data-raz')) { for (const l of lignes) l.q = {}; dessiner('[data-i="0"][data-k="0"]'); }
     });
     document.addEventListener('keydown', esc_, true);
     hote.appendChild(el);
     const k0 = Math.max(0, tailles.findIndex((t) => +lignes[0].q[t] > 0));
-    dessiner(lignes[0].c || !couleurs.length ? `[data-i="0"][data-k="${k0}"]` : '[data-c="0"]');
+    dessiner(LIM ? 'input[data-i]' : lignes[0].c || !couleurs.length ? `[data-i="0"][data-k="${k0}"]` : '[data-c="0"]');
   });
 }
 

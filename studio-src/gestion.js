@@ -339,7 +339,7 @@ async function newBL(o) {
   if (!goods.length) return toast('Tout est déjà livré.', true);
   const r = await ask({ title: `Bon de livraison · commande ${o.number}`, text: 'Quantités à livrer maintenant (le reste pourra faire l’objet d’un autre BL).', wide: true, fields: [
     { k: 'date', label: 'Date de livraison', type: 'date', value: isoToday() },
-    { k: 'qty', type: 'table', rows: goods.map((l) => ({ id: l.id, label: [l.designation, l.staff, l.color, l.size].filter(Boolean).join(' · '), max: (+l.qty || 0) - (del[l.id] || 0) })) },
+    { k: 'qty', type: 'table', rows: goods.map((l) => ({ id: l.id, label: [l.designation, l.staff, l.color, l.size].filter(Boolean).join(' · '), max: (+l.qty || 0) - (del[l.id] || 0), c: l.color || '', t: l.size || '', grp: [l.article || '', l.designation, l.staff || ''].join('¦'), titre: [l.article, l.designation, l.staff].filter(Boolean).join(' · ') })) },
     { k: 'note', label: 'Observations (facultatif)' }], okLabel: 'Créer le BL' });
   if (!r) return;
   const lines = goods.map((l) => ({ lineId: l.id, article: l.article || '', designation: l.designation, staff: l.staff, color: l.color, size: l.size, qty: Math.min(Math.max(0, Math.floor(+r.qty[l.id] || 0)), (+l.qty || 0) - (del[l.id] || 0)) })).filter((l) => l.qty > 0);
@@ -483,7 +483,7 @@ async function newInvoice(o, bl, multi) {
   const POs = [...new Set((multi ? multi.bls.map((b) => b.clientPO || (db.orders.find((x) => x.id === b.orderId) || {}).clientPO || '') : [o ? o.clientPO || '' : r.clientPO.trim()]).filter(Boolean))];
   const inv = { date: r.date, due: r.due, orderId: o ? o.id : '', orderNumber: multi ? MO.map((x) => x.number).join(', ') : o ? o.number : '', clientPO: POs.join(', '), blIds, blNumbers: blIds.map((id) => db.bls.find((b) => b.id === id).number), client,
     ...(multi ? { orderIds: MO.map((x) => x.id), orderNumbers: MO.map((x) => x.number), blDates: blIds.map((id) => db.bls.find((b) => b.id === id).date) } : {}),
-    lines: L.map(({ studio, ...l }) => ({ ...l, ...(Array.isArray(l.detail) && l.detail.length ? { detail: l.detail, qty: totalDetail(l.detail), designation: `${sansResume(l.designation)} (${resumeDetail(l.detail)})` } : { qty: +l.qty }), pu: r3(+l.pu), remise: Math.min(100, Math.max(0, +l.remise || 0)) })), tva: EXP ? 0 : +r.lines.tva, timbre: EXP ? 0 : +r.lines.timbre, fodec: EXP ? 0 : +G.fodec || 0, pricesTTC: false, advance: 0, payments: [], paymentMode: r.paymentMode, note: r.note.trim(), status: 'validee',
+    lines: L.map(({ studio, _q0, ...l }) => ({ ...l, ...((l.lineIds || []).length > 1 && l.qtyBy ? { lineIds: l.lineIds.filter((id) => +l.qtyBy[id] > 0), qtyBy: Object.fromEntries(Object.entries(l.qtyBy).filter(([, q]) => +q > 0)) } : {}), ...(Array.isArray(l.detail) && l.detail.length ? { detail: l.detail, qty: totalDetail(l.detail), designation: `${sansResume(l.designation)} (${resumeDetail(l.detail)})` } : { qty: +l.qty }), pu: r3(+l.pu), remise: Math.min(100, Math.max(0, +l.remise || 0)) })), tva: EXP ? 0 : +r.lines.tva, timbre: EXP ? 0 : +r.lines.timbre, fodec: EXP ? 0 : +G.fodec || 0, pricesTTC: false, advance: 0, payments: [], paymentMode: r.paymentMode, note: r.note.trim(), status: 'validee',
     ...(EXP ? { currency: r00.kind, export: true, incoterm: r.incoterm || '' } : {}), ...(r.ttnRef.trim() ? { ttnRef: r.ttnRef.trim() } : {}) };
   inv.advance = EXP ? 0 : r3(Math.min(Math.max(0, +r.advance || 0), advLeft || (o ? 0 : 0), invoiceTotals(inv).net));
   if (multi && inv.advance > 0) { let rest = inv.advance; inv.advanceBy = {}; for (const x of MO) { const a = r3(Math.min(rest, advBy[x.id] || 0)); if (a > 0) { inv.advanceBy[x.id] = a; rest = r3(rest - a); } } }
@@ -533,7 +533,7 @@ async function editInvoice(i0) {
   const L = r.lines.lines.filter((l) => +l.qty > 0);
   if (!L.length) return toast('Une facture garde au moins une ligne : pour tout retirer, annulez la facture.', true);
   if (L.some((l) => !String(l.designation).trim())) return toast('Chaque ligne doit avoir une désignation.', true);
-  const rec = { ...i, lines: L.map(({ studio, _pu0, _ht0, ...l }) => {
+  const rec = { ...i, lines: L.map(({ studio, _pu0, _ht0, _q0, ...l }) => {
     const y = { ...l, qty: +l.qty, pu: _pu0 !== undefined && r3(+l.pu) === _ht0 ? _pu0 : r3(+l.pu * kI(l)), remise: Math.min(100, Math.max(0, +l.remise || 0)) };
     if (Array.isArray(l.detail) && l.detail.length && !(l.lineIds || []).length) { y.qty = totalDetail(l.detail); y.designation = `${sansResume(l.designation)} (${resumeDetail(l.detail)})`; } // 0.14.0
     if ((l.lineIds || []).length === 1) y.qtyBy = { [l.lineIds[0]]: y.qty }; // une seule taille : la quantité saisie est celle de la taille
@@ -573,15 +573,18 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
       if (f.type === 'check') return `<label class="chk"><input type="checkbox" data-k="${f.k}"> ${esc(f.label)}</label>`;
       if (f.type === 'checks') return `<div class="w2"><table class="t ed"><thead><tr><th style="width:34px"><input type="checkbox" data-ckall="${f.k}" title="Tout cocher / décocher" ${f.rows.every((r) => v[f.k][r.id]) ? 'checked' : ''}></th>${f.cols.map((c) => `<th class="${c.n ? 'n' : ''}">${esc(c.l)}</th>`).join('')}</tr></thead><tbody>${f.rows.map((r) => `<tr class="ckrow ${v[f.k][r.id] ? 'on' : ''}"><td><input type="checkbox" data-ck="${f.k}" data-id="${esc(r.id)}" ${v[f.k][r.id] ? 'checked' : ''}></td>${r.cells.map((c, i) => `<td class="${f.cols[i].n ? 'n' : ''}">${c}</td>`).join('')}</tr>`).join('')}</tbody></table>
         <p class="hint" data-cksum="${f.k}">${f.sum ? f.sum(v[f.k]) : ''}</p></div>`;
-      if (f.type === 'table') return `<div class="w2"><table class="t ed"><thead><tr><th>Ligne</th><th class="n">Reste</th><th class="n">À livrer</th></tr></thead><tbody>${f.rows.map((r) => `<tr><td>${esc(r.label)}</td><td class="n mute">${r.max}</td><td class="n"><input type="number" min="0" max="${r.max}" step="1" data-tk="${f.k}" data-id="${esc(r.id)}" value="${v[f.k][r.id]}"></td></tr>`).join('')}</tbody></table>
-        <div class="row"><button type="button" class="btn sm ghost" data-all="${f.k}">Tout livrer</button><button type="button" class="btn sm ghost" data-none="${f.k}">Tout à zéro</button></div></div>`;
+      if (f.type === 'table') { // 0.14.1 : lignes d'un même produit regroupées, bouton ▦ (couleurs × tailles, au plus le reste)
+        const grs = []; for (const r of f.rows) { let g = grs.find((x) => x.k === (r.grp || r.id)); if (!g) { g = { k: r.grp || r.id, titre: r.titre || r.label, rows: [] }; grs.push(g); } g.rows.push(r); }
+        const ligne = (r) => `<tr><td>${esc(r.label)}</td><td class="n mute">${r.max}</td><td class="n"><input type="number" min="0" max="${r.max}" step="1" data-tk="${f.k}" data-id="${esc(r.id)}" value="${v[f.k][r.id]}"></td></tr>`;
+        return `<div class="w2"><table class="t ed"><thead><tr><th>Ligne</th><th class="n">Reste</th><th class="n">À livrer</th></tr></thead><tbody>${grs.map((g, gi) => g.rows.length > 1 && g.rows.some((r) => r.c || r.t) ? `<tr class="grp"><td colspan="2">${esc(g.titre)} <span class="mute">· ${g.rows.length} couleurs × tailles</span></td><td class="n"><button type="button" class="btn sm ghost grb" data-tgr="${f.k}" data-g="${gi}" title="Quantités par couleur et taille">${g.rows.reduce((s2, r) => s2 + (+v[f.k][r.id] || 0), 0)} ▦</button></td></tr>${g.rows.map(ligne).join('')}` : g.rows.map(ligne).join('')).join('')}</tbody></table>
+        <div class="row"><button type="button" class="btn sm ghost" data-all="${f.k}">Tout livrer</button><button type="button" class="btn sm ghost" data-none="${f.k}">Tout à zéro</button></div></div>`; }
       if (f.type === 'invlines') { const x = v[f.k], cs = !!x.cs, rem = x.remise !== false;
         const row = (l, i) => { const lk = !!l.studio;
           return `<tr ${ficheAttr(l.article, l.orderId || x.orderId)}><td class="refc"><input data-il="${i}" data-c="article" value="${esc(l.article || '')}" placeholder="Réf." autocomplete="off" ${lk ? 'readonly' : ''}></td>
             <td><input data-il="${i}" data-c="designation" value="${esc(l.designation)}" ${lk ? 'readonly' : ''}>${lk ? '<span class="tag" title="Commande saisie en Infographie : seuls le prix et la remise se modifient">infographie</span>' : ''}${!cs && Array.isArray(l.detail) && l.detail.length ? `<div><button type="button" class="linkb small" data-ilgr="${i}" title="Modifier (F2)">${esc(resumeDetail(l.detail))}</button></div>` : ''}</td>
             <td><select data-il="${i}" data-c="staff" ${lk ? 'disabled' : ''}><option value="">—</option>${[...new Set([...staffs, l.staff].filter(Boolean))].map((s2) => `<option ${s2 === l.staff ? 'selected' : ''}>${esc(s2)}</option>`).join('')}</select></td>
             ${cs ? (Array.isArray(l.detail) && l.detail.length ? `<td colspan="2"><button type="button" class="linkb small" data-ilgr="${i}" title="Modifier les quantités par couleur et taille (F2)">${esc(resumeDetail(l.detail))}</button></td>` : `<td><input data-il="${i}" data-c="color" value="${esc(l.color || '')}" class="w-s"></td><td><input data-il="${i}" data-c="size" value="${esc(l.size || '')}" class="w-xs"></td>`) : ''}
-            <td class="n">${!lk && !l.lineIds && !l.service && x.grille !== false ? `<button type="button" class="btn sm ghost grb" data-ilgr="${i}" title="Quantités par couleur et taille (F2)">${Array.isArray(l.detail) && l.detail.length ? l.qty + ' ▦' : '▦'}</button>` : ''}${Array.isArray(l.detail) && l.detail.length && !l.lineIds ? '' : l.qtyBy && Object.keys(l.qtyBy).length > 1 ? `<button type="button" class="btn sm ghost" data-ilsz="${i}" title="Quantités par taille" ${lk ? 'disabled' : ''}>${l.qty}${lk ? '' : ' ✎'}</button>` : `<input type="number" min="0" step="1" data-il="${i}" data-c="qty" value="${l.qty}" ${lk ? 'readonly' : ''}>`}</td>
+            <td class="n">${!lk && !l.lineIds && !l.service && x.grille !== false ? `<button type="button" class="btn sm ghost grb" data-ilgr="${i}" title="Quantités par couleur et taille (F2)">${Array.isArray(l.detail) && l.detail.length ? l.qty + ' ▦' : '▦'}</button>` : ''}${Array.isArray(l.detail) && l.detail.length && !l.lineIds ? '' : l.qtyBy && Object.keys(l.qtyBy).length > 1 ? `<button type="button" class="btn sm ghost" data-ilsz="${i}" title="Quantités par couleur et taille (F2)" ${lk ? 'disabled' : ''}>${l.qty}${lk ? '' : ' ▦'}</button>` : `<input type="number" min="0" step="1" data-il="${i}" data-c="qty" value="${l.qty}" ${lk ? 'readonly' : ''}>`}</td>
             <td class="n"><input type="number" min="0" step="0.001" data-il="${i}" data-c="pu" value="${l.pu}"></td>
             ${rem ? `<td class="n"><input type="number" min="0" max="100" step="1" data-il="${i}" data-c="remise" value="${l.remise || 0}"></td>` : ''}
             <td class="n b" data-lt="${i}">${dt(lineHT(l))}</td><td>${lk ? '' : `<button type="button" class="ib" data-ildel="${i}" title="Supprimer la ligne">✕</button>`}</td></tr>`; };
@@ -611,6 +614,7 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
     // 0.14.0 : fenêtre « couleurs × tailles » d'une ligne ; le total va dans Qté, le détail reste sur la ligne
     const grilleLigne = async (i) => {
       const x = v[inv().k], l = x.lines[i]; if (!l) return;
+      if ((l.lineIds || []).length) { if ((l.lineIds || []).length > 1 && !grilleLiee(i)) { const bb = dlg.querySelector(`[data-ilsz="${i}"]`); if (bb) bb.click(); } return; }
       if (!l.article && !String(l.designation || '').trim()) { toast('Choisissez d’abord le produit (Réf.) ou saisissez la désignation.', true); const a = dlg.querySelector(`[data-il="${i}"][data-c="article"]`); if (a) a.focus(); return; }
       const d0 = Array.isArray(l.detail) && l.detail.length ? l.detail : (+l.qty > 0 && (l.color || l.size) ? [{ couleur: l.color || '', taille: l.size || '', qte: +l.qty }] : []);
       const r = await ouvrirGrille({ titre: `${l.article ? l.article + ' · ' : ''}${sansResume(l.designation) || 'Ligne ' + (i + 1)}`, tailles: taillesDe(l.article), couleurs: couleursCat(), detail: d0, hote: dlg });
@@ -620,6 +624,24 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
       else { l.detail = r; l.qty = totalDetail(r); l.color = ''; l.size = ''; }
       l.designation = sansResume(l.designation);
       draw(); const nx = dlg.querySelector(`[data-il="${i}"][data-c="pu"]`); if (nx) { nx.focus(); nx.select && nx.select(); }
+    };
+    // 0.14.1 : ligne de facture reprise d'une commande / d'un BL (plusieurs tailles) → grille couleurs × tailles, au plus le reste à facturer de chaque taille
+    const grilleLiee = (i) => {
+      const x = v[inv().k], l = x.lines[i]; if (!l || !(l.lineIds || []).length || l.studio) return false;
+      const o = db.orders.find((z) => z.id === (l.orderId || x.orderId)); if (!o) return false;
+      const caps = x.caps || {}, q0 = l._q0 || (l._q0 = { ...(l.qtyBy || {}) });
+      const L = l.lineIds.map((id) => { const ol = o.lines.find((z) => z.id === id) || {}; const c = caps[id]; return { id, couleur: ol.color || '', taille: ol.size || 'TU', max: c && Number.isFinite(c.max) ? c.max : (+q0[id] || 0) }; });
+      if (!L.some((y) => y.couleur || y.taille !== 'TU') || new Set(L.map((y) => y.couleur + '¦' + y.taille)).size < L.length) return false;
+      ouvrirGrille({ titre: sansResume(l.designation), sousTitre: 'Au plus le reste à facturer de chaque taille', libMax: 'Tout facturer', couleurs: couleursCat(), hote: dlg, limites: L,
+        detail: L.map((y) => ({ couleur: y.couleur, taille: y.taille, qte: +(l.qtyBy || {})[y.id] || 0 })) }).then((res) => {
+        if (!res) return; l.qtyBy = {};
+        for (const y of L) { const z = res.find((w) => w.couleur === y.couleur && w.taille === y.taille); l.qtyBy[y.id] = Math.min(y.max, z ? z.qte : 0); }
+        l.qty = Object.values(l.qtyBy).reduce((s2, q2) => s2 + (+q2 || 0), 0);
+        const sz = L.filter((y) => l.qtyBy[y.id] > 0).map((y) => `${y.taille}×${l.qtyBy[y.id]}`);
+        if (sz.length && L.some((y) => y.taille !== 'TU')) l.designation = sansResume(l.designation) + ` (${sz.join(', ')})`;
+        draw();
+      });
+      return true;
     };
     const done = (r) => { RP.detacher(); ASK_OPEN = false; const m = $('#dlgmin'); if (m) m.remove(); dlg.hidden = true; dlg.classList.remove('mini'); dlg.innerHTML = ''; dlg.oninput = dlg.onchange = dlg.onclick = dlg.onsubmit = null; dlg.removeEventListener('focusout', fo); window.removeEventListener('keydown', ek); resolve(r); };
     const ek = (e) => { if (mini) return; if (e.key === 'F2' && inv() && !document.getElementById('grillepop')) { const a = document.activeElement, il = a && a.dataset && a.dataset.il; if (il !== undefined && dlg.contains(a)) { e.preventDefault(); grilleLigne(+il); } return; } if (document.getElementById('grillepop')) return; if (e.key === 'Escape') { if (RP.ouvert()) { closePop(); return; } if (!document.querySelector('.dp-pop') && confirm('Fermer sans enregistrer ?')) done(null); } };
@@ -646,11 +668,20 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
       if (b.hasAttribute('data-x')) { if (!e.isTrusted || b.classList.contains('wx') ? confirm('Fermer sans enregistrer ?') : true) done(null); }
       else if (b.hasAttribute('data-wmin')) minimize();
       else if (b.hasAttribute('data-wmax')) { const fm = dlg.querySelector('form'); full = !full; fm.classList.toggle('full', full); b.textContent = full ? '❐' : '☐'; b.title = full ? 'Fenêtre' : 'Plein écran'; }
+      else if (b.dataset.tgr) { // 0.14.1 : grille d'un produit du BL (cases = couleurs × tailles restant à livrer)
+        const f = fields.find((x) => x.k === b.dataset.tgr), grs = []; for (const r of f.rows) { let g = grs.find((x) => x.k === (r.grp || r.id)); if (!g) { g = { k: r.grp || r.id, titre: r.titre || r.label, rows: [] }; grs.push(g); } g.rows.push(r); }
+        const g = grs[+b.dataset.g]; if (!g) return;
+        const cle = (r) => `${r.c}¦${r.t || 'TU'}`; if (new Set(g.rows.map(cle)).size < g.rows.length) return toast('Deux lignes ont la même couleur et la même taille : saisissez-les dans le tableau.', true);
+        ouvrirGrille({ titre: g.titre, sousTitre: 'À livrer — au plus le reste de chaque case', libMax: 'Tout livrer', couleurs: couleursCat(), hote: dlg,
+          limites: g.rows.map((r) => ({ couleur: r.c, taille: r.t || 'TU', max: r.max })), detail: g.rows.map((r) => ({ couleur: r.c, taille: r.t || 'TU', qte: +v[f.k][r.id] || 0 })) })
+          .then((res) => { if (!res) return; for (const r of g.rows) { const x = res.find((y) => y.couleur === r.c && y.taille === (r.t || 'TU')); v[f.k][r.id] = Math.min(r.max, x ? x.qte : 0); } draw(); });
+      }
       else if (b.dataset.all) { const f = fields.find((x) => x.k === b.dataset.all); for (const r of f.rows) v[f.k][r.id] = r.max; draw(); }
       else if (b.dataset.none) { const f = fields.find((x) => x.k === b.dataset.none); for (const r of f.rows) v[f.k][r.id] = 0; draw(); }
       else if (b.hasAttribute('data-iladd')) { const x = v[inv().k]; x.lines.push(blankLine(x.cs)); draw(); const l = dlg.querySelectorAll('[data-c="article"]'); if (l.length) l[l.length - 1].focus(); }
       else if (b.dataset.ildel !== undefined) { v[inv().k].lines.splice(+b.dataset.ildel, 1); draw(); }
       else if (b.dataset.ilgr !== undefined) grilleLigne(+b.dataset.ilgr);
+      else if (b.dataset.ilsz !== undefined && grilleLiee(+b.dataset.ilsz)) { /* 0.14.1 : grille plafonnée */ }
       else if (b.dataset.ilsz !== undefined) { // quantités par taille d'une ligne regroupée (plafond : reste à facturer de la commande)
         const x = v[inv().k], l = x.lines[+b.dataset.ilsz], caps = x.caps || {};
         for (const id of l.lineIds || []) {

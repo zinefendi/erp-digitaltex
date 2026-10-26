@@ -335,20 +335,22 @@ async function modifierAvoir(a) {
   try { await api('POST', `/api/verrous/avoir/${a.id}`); C = await api('GET', `/api/ventes/factures/${encodeURIComponent(a.facture_id)}/creditable?sauf=${a.id}`); }
   catch (x) { toast(x.message, true); return; }
   const cur = Object.fromEntries((a.lignes || []).map((l) => [l.index, l]));
+  const DET = Object.fromEntries((a.lignes || []).filter((l) => Array.isArray(l.detail) && l.detail.length).map((l) => [l.index, l.detail]));
   grandeFenetre(`<h3>Modifier l’avoir ${esc(a.numero)} · facture ${esc(a.facture_num)}</h3><div class="msg err" hidden role="alert"></div>
     <p class="mute small">Quantité à 0 = ligne retirée de l’avoir. Le prix peut être baissé (erreur de prix), jamais au-dessus du prix facturé. L’imputation sur la facture est recalculée.</p>
     <div class="champ"><label for="am-m">Motif *</label><input id="am-m" name="motif" required maxlength="300" value="${esc(a.motif || '')}"></div>
     <div class="panneau" style="padding:6px 10px;margin-bottom:10px;overflow:auto"><table class="nombres"><thead><tr><th>Désignation</th><th class="n">Facturé</th><th class="n">Créditable</th><th class="n">PRIX H.T. facturé</th><th class="n">PRIX H.T. avoir</th><th class="n">Qté avoir</th><th></th></tr></thead><tbody>
       ${C.lignes.map((l) => `<tr data-fiche="${esc(l.article || '')}"><td>${esc(l.designation)}</td><td class="n">${l.qte}</td><td class="n">${l.creditable}</td><td class="n">${md(htAv(C, l), C.devise)}</td>
         <td class="n"><input data-pu="${l.index}" type="number" step="any" min="0" max="${htAv(C, l)}" value="${cur[l.index] && cur[l.index].pu !== undefined ? htAv(C, { ...l, pu: cur[l.index].pu }) : htAv(C, l)}" style="width:90px" ${l.creditable <= 0 ? 'disabled' : ''}></td>
-        <td class="n"><input data-q="${l.index}" type="number" step="any" min="0" max="${l.creditable}" value="${cur[l.index] ? cur[l.index].qte : 0}" style="width:80px" ${l.creditable <= 0 ? 'disabled' : ''}></td>
+        <td class="n" style="white-space:nowrap"><input data-q="${l.index}" type="number" step="any" min="0" max="${l.creditable}" value="${cur[l.index] ? cur[l.index].qte : 0}" style="width:80px" ${l.creditable <= 0 ? 'disabled' : ''}> <span data-avr="${l.index}">${btnGrAv(l, DET[l.index])}</span></td>
         <td>${cur[l.index] ? `<button type="button" class="btn ghost sm" data-raz="${l.index}" title="Retirer la ligne de l’avoir">✕</button>` : ''}</td></tr>`).join('')}</tbody></table>
       <div class="small" id="am-tot" style="padding:8px 0;text-align:right"></div></div>
     <div class="champ"><label for="am-n">Note</label><input id="am-n" name="note" maxlength="1000" value="${esc(a.note || '')}"></div>
     <div class="pied"><button class="btn ghost" value="annuler" formnovalidate>Annuler</button><button class="btn" value="ok">Enregistrer</button></div>`, async (f) => {
     const lignes = [...f.querySelectorAll('[data-q]')].map((i) => { const l = C.lignes.find((y) => y.index === +i.dataset.q), v = +f.querySelector(`[data-pu="${i.dataset.q}"]`).value || 0, c0 = cur[l.index];
       const avant = c0 && c0.pu !== undefined ? c0.pu : l.pu, avantHT = htAv(C, { ...l, pu: avant });
-      return { index: l.index, qte: +i.value || 0, pu: r3(v) === avantHT ? avant : Math.min(l.pu, r3(v * kAv(C, l))) }; }).filter((l) => l.qte > 0);
+      const d = DET[l.index] && window.Grille && window.Grille.totalDetail(DET[l.index]) === (+i.value || 0) ? { detail: DET[l.index] } : {};
+      return { index: l.index, qte: +i.value || 0, pu: r3(v) === avantHT ? avant : Math.min(l.pu, r3(v * kAv(C, l))), ...d }; }).filter((l) => l.qte > 0);
     if (!lignes.length) throw new Error('Un avoir garde au moins une ligne : pour tout retirer, annulez l’avoir.');
     const r = await api('PUT', `/api/ventes/avoirs/${a.id}`, { version: a.version, motif: f.motif.value.trim(), note: f.note.value.trim(), lignes });
     GEST = null; versCadres({ type: 'rafraichir' });
@@ -360,17 +362,32 @@ async function modifierAvoir(a) {
     let s = 0; z.querySelectorAll('[data-q]').forEach((i) => { const l = C.lignes.find((x) => x.index === +i.dataset.q); s += (+i.value || 0) * (+z.querySelector(`[data-pu="${i.dataset.q}"]`).value || 0) * (1 - (l.remise || 0) / 100); });
     $('#am-tot').innerHTML = `Montant H.T. des lignes : <b>${md(s, C.devise)}</b> ${C.timbre ? ` + timbre ${md(C.timbre, C.devise)}` : ''} (montant exact, FODEC, TVA et timbre calculés par le serveur)`;
   };
-  z.addEventListener('input', calc);
-  z.addEventListener('click', (e) => { const b = e.target.closest('[data-raz]'); if (b) { z.querySelector(`[data-q="${b.dataset.raz}"]`).value = 0; calc(); } });
+  const majR = (i) => { const sp = z.querySelector(`[data-avr="${i}"]`), l = C.lignes.find((y) => y.index === i); if (sp && l) sp.innerHTML = btnGrAv(l, DET[i]); };
+  z.addEventListener('input', (e) => { if (e.target.dataset.q !== undefined) { const i = +e.target.dataset.q; if (DET[i] && window.Grille && window.Grille.totalDetail(DET[i]) !== (+e.target.value || 0)) { delete DET[i]; majR(i); } } calc(); });
+  z.addEventListener('click', (e) => {
+    const g = e.target.closest('[data-avgr]'); if (g) { e.preventDefault(); return grilleAvoir(C, +g.dataset.avgr, DET, z, () => { majR(+g.dataset.avgr); calc(); }); }
+    const b = e.target.closest('[data-raz]'); if (b) { z.querySelector(`[data-q="${b.dataset.raz}"]`).value = 0; delete DET[+b.dataset.raz]; majR(+b.dataset.raz); calc(); } });
   calc();
 }
 
 // 0.10.1 : avoirs affichés en PRIX H.T. (facture saisie TTC : conversion, le prix ne dépasse jamais le prix facturé)
 const kAv = (C, l) => (C.prix_ttc ? (1 + (+C.tva || 0) / 100) * (l.service ? 1 : 1 + (+C.fodec || 0) / 100) : 1);
 const htAv = (C, l) => r3((+l.pu || 0) / kAv(C, l));
+// 0.14.1 : avoir par couleur × taille — bouton ▦ sur les lignes de facture qui ont un détail (grille, au plus le reste créditable de chaque case)
+let CAT_AV = null;
+const couleursAv = async () => { if (!CAT_AV) CAT_AV = await api('GET', '/api/infographie/catalogue').then((r) => r.catalogue).catch(() => ({})); const sh = (CAT_AV && CAT_AV.shop) || {}; const vu = new Set(); return [...(sh.colors || []), ...Object.values(sh.trimColors || {}).flat()].filter((c) => Array.isArray(c) && c[0] && !vu.has(c[0]) && vu.add(c[0])); };
+const btnGrAv = (l, det) => (l.cases && l.cases.length > 1 && window.Grille ? `<button type="button" class="btn ghost sm" data-avgr="${l.index}" title="Quantités par couleur et taille" ${l.creditable <= 0 ? 'disabled' : ''}>▦</button>${det && det.length ? `<div class="mute small">${esc(window.Grille.resumeDetail(det))}</div>` : ''}` : '');
+async function grilleAvoir(C, idx, DET, z, apres) {
+  const l = C.lignes.find((y) => y.index === idx); if (!l || !l.cases) return;
+  const r = await window.Grille.ouvrirGrille({ titre: l.designation.replace(/\s*\([^()]*×[^()]*\)\s*$/, ''), sousTitre: 'À créditer — au plus le facturé non encore crédité', libMax: 'Tout créditer', couleurs: await couleursAv(), hote: z.closest('dialog') || document.body,
+    limites: l.cases.map((x) => ({ couleur: x.couleur, taille: x.taille, max: x.max })), detail: DET[idx] || [] });
+  if (!r) return;
+  DET[idx] = r.length ? r : undefined; const q = z.querySelector(`[data-q="${idx}"]`); if (q) q.value = window.Grille.totalDetail(r);
+  apres();
+}
 function nouvelAvoir(G) {
   const facs = (G.invoices || []).filter((f) => f.status !== 'annulee' && f.number).sort((a, b) => String(b.date).localeCompare(String(a.date)));
-  let C = null;
+  let C = null, DET = {};
   grandeFenetre(`<h3>Nouvel avoir</h3><div class="msg err" hidden role="alert"></div>
     <div class="grille2"><div class="champ" style="grid-column:1/-1"><label for="av-f">Facture d’origine *</label><select id="av-f" name="facture" required><option value="">— Choisir —</option>
       ${facs.map((f) => `<option value="${esc(f.id)}">${esc(f.number)} · ${jour(f.date)} · ${esc(f.client?.name || '')}</option>`).join('')}</select></div>
@@ -380,8 +397,8 @@ function nouvelAvoir(G) {
     <div class="champ"><label for="av-n">Note</label><input id="av-n" name="note" maxlength="1000"></div>
     <div class="pied"><button class="btn ghost" value="annuler" formnovalidate>Annuler</button><button class="btn" value="ok">Établir l’avoir</button></div>`, async (f) => {
     if (!C) throw new Error('Choisissez la facture.');
-    const lignes = [...f.querySelectorAll('[data-q]')].map((i) => ({ index: +i.dataset.q, qte: +i.value || 0 })).filter((l) => l.qte > 0);
-    const total = C.lignes.every((l) => l.creditable <= 0 || lignes.find((x) => x.index === l.index)?.qte === l.creditable);
+    const lignes = [...f.querySelectorAll('[data-q]')].map((i) => ({ index: +i.dataset.q, qte: +i.value || 0, ...(DET[+i.dataset.q] && window.Grille.totalDetail(DET[+i.dataset.q]) === (+i.value || 0) ? { detail: DET[+i.dataset.q] } : {}) })).filter((l) => l.qte > 0);
+    const total = !lignes.some((l) => l.detail) && C.lignes.every((l) => l.creditable <= 0 || lignes.find((x) => x.index === l.index)?.qte === l.creditable);
     if (!lignes.length) throw new Error('Indiquez au moins une quantité à créditer.');
     const body = { facture_id: C.id, date: f.date.value, motif: f.motif.value.trim(), note: f.note.value.trim(), ...(total ? { total: true } : { lignes }) };
     const r = await api('POST', '/api/ventes/avoirs', body);
@@ -398,17 +415,20 @@ function nouvelAvoir(G) {
   };
   z.addEventListener('change', async (e) => {
     if (e.target.id !== 'av-f') return;
-    C = null; $('#av-l').innerHTML = '<div class="vide">Chargement…</div>';
+    C = null; DET = {}; $('#av-l').innerHTML = '<div class="vide">Chargement…</div>';
     if (!e.target.value) return;
     try { C = await api('GET', `/api/ventes/factures/${encodeURIComponent(e.target.value)}/creditable`); } catch (x) { $('#av-l').innerHTML = `<div class="vide">${esc(x.message)}</div>`; return; }
     $('#av-l').innerHTML = `<table class="nombres"><thead><tr><th>Désignation</th><th class="n">Facturé</th><th class="n">Déjà crédité</th><th class="n">PRIX H.T.</th><th class="n">À créditer</th></tr></thead><tbody>
       ${C.lignes.map((l) => `<tr data-fiche="${esc(l.article || '')}"><td>${esc(l.designation)}</td><td class="n">${l.qte}</td><td class="n">${l.credite || '—'}</td><td class="n">${md(htAv(C, l), C.devise)}</td>
-        <td class="n"><input data-q="${l.index}" type="number" step="any" min="0" max="${l.creditable}" value="0" style="width:80px" ${l.creditable <= 0 ? 'disabled' : ''}></td></tr>`).join('')}</tbody></table>
+        <td class="n" style="white-space:nowrap"><input data-q="${l.index}" type="number" step="any" min="0" max="${l.creditable}" value="0" style="width:80px" ${l.creditable <= 0 ? 'disabled' : ''}> <span data-avr="${l.index}">${btnGrAv(l)}</span></td></tr>`).join('')}</tbody></table>
       <div class="row-f" style="justify-content:space-between;padding:8px 0"><button type="button" class="btn ghost sm" data-tout>Tout créditer (avoir total)</button><span class="small" id="av-tot"></span></div>`;
     calc();
   });
-  z.addEventListener('input', (e) => { if (e.target.dataset.q !== undefined) calc(); });
-  z.addEventListener('click', (e) => { if (e.target.closest('[data-tout]')) { z.querySelectorAll('[data-q]').forEach((i) => { i.value = C.lignes[+i.dataset.q].creditable; }); calc(); } });
+  const majR = (i) => { const sp = z.querySelector(`[data-avr="${i}"]`), l = C.lignes.find((y) => y.index === i); if (sp && l) sp.innerHTML = btnGrAv(l, DET[i]); };
+  z.addEventListener('input', (e) => { if (e.target.dataset.q !== undefined) { const i = +e.target.dataset.q; if (DET[i] && window.Grille.totalDetail(DET[i]) !== (+e.target.value || 0)) { DET[i] = undefined; majR(i); } calc(); } });
+  z.addEventListener('click', (e) => {
+    const g = e.target.closest('[data-avgr]'); if (g && C) { e.preventDefault(); return grilleAvoir(C, +g.dataset.avgr, DET, z, () => { majR(+g.dataset.avgr); calc(); }); }
+    if (e.target.closest('[data-tout]')) { DET = {}; z.querySelectorAll('[data-q]').forEach((i) => { i.value = C.lignes[+i.dataset.q].creditable; majR(+i.dataset.q); }); calc(); } });
 }
 
 /* ---------------------------------------------------------------- Colisage et documents export des factures */

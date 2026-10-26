@@ -588,3 +588,32 @@ test('0.14.0 détail couleurs × tailles : proforma → commande éclatée par c
   assert.equal(f.lines[0].qty, 30); assert.equal(f.lines[0].lineIds.length, 3);
   assert.match(f.lines[0].designation, /Blanc M×12 L×10 · Bleu marine M×8/);
 });
+
+test('0.14.1 avoir par couleur × taille : cases de la facture, plafond par case, cumul des avoirs, modification', async () => {
+  const det = [{ couleur: 'Blanc', taille: 'M', qte: 5 }, { couleur: 'Blanc', taille: 'L', qte: 4 }, { couleur: 'Noir', taille: 'M', qte: 3 }];
+  let r = await appel('POST', '/api/ventes/proformas', { jeton: J.commercial, body: { client_id: 'cl-local', lignes: [{ produit: PF.reference, designation: 'Polo homme', qte: 12, pu: 25, detail: det }] } });
+  assert.equal(r.statusCode, 201, r.body);
+  const p = (await appel('GET', `/api/ventes/proformas/${r.json().id}`, { jeton: J.commercial })).json();
+  r = await appel('POST', `/api/ventes/proformas/${p.id}/facture`, { jeton: J.admin, body: { version: p.version } });
+  assert.equal(r.statusCode, 201, r.body);
+  const f = (await gestionDe(J.compta)).invoices.find((x) => x.number === r.json().facture.numero);
+  let C = (await appel('GET', `/api/ventes/factures/${f.id}/creditable`, { jeton: J.compta })).json();
+  assert.deepEqual(C.lignes[0].cases.map((x) => [x.couleur, x.taille, x.max]), [['Blanc', 'M', 5], ['Blanc', 'L', 4], ['Noir', 'M', 3]], 'cases reprises de la commande');
+  const av = (lignes) => appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: f.id, motif: 'Retour', lignes } });
+  r = await av([{ index: 0, qte: 1, detail: [{ couleur: 'Rouge', taille: 'M', qte: 1 }] }]);
+  assert.equal(r.json().erreur, 'detail_invalide', 'case absente de la facture');
+  r = await av([{ index: 0, qte: 4, detail: [{ couleur: 'Noir', taille: 'M', qte: 4 }] }]);
+  assert.equal(r.json().erreur, 'trop_credite', 'au plus le facturé de la case');
+  r = await av([{ index: 0, qte: 99, detail: [{ couleur: 'Noir', taille: 'M', qte: 2 }, { couleur: 'Blanc', taille: 'L', qte: 1 }] }]);
+  assert.equal(r.statusCode, 201, r.body);
+  const a = r.json();
+  assert.equal(a.lignes[0].qte, 3, 'quantité = total du détail (recalculée par le serveur)');
+  assert.deepEqual(a.lignes[0].detail.map((x) => [x.couleur, x.taille, x.qte]), [['Noir', 'M', 2], ['Blanc', 'L', 1]]);
+  C = (await appel('GET', `/api/ventes/factures/${f.id}/creditable`, { jeton: J.compta })).json();
+  assert.deepEqual(C.lignes[0].cases.map((x) => x.max), [5, 3, 1], 'reste par case après le 1er avoir');
+  r = await av([{ index: 0, qte: 2, detail: [{ couleur: 'Noir', taille: 'M', qte: 2 }] }]);
+  assert.equal(r.json().erreur, 'trop_credite', 'cumul des avoirs contrôlé par case');
+  r = await appel('PUT', `/api/ventes/avoirs/${a.id}`, { jeton: J.compta, body: { version: a.version, lignes: [{ index: 0, qte: 3, detail: [{ couleur: 'Noir', taille: 'M', qte: 3 }] }] } });
+  assert.equal(r.statusCode, 200, r.body);
+  assert.deepEqual(r.json().lignes[0].detail, [{ couleur: 'Noir', taille: 'M', qte: 3 }], 'modification : ses propres quantités restent créditables');
+});
