@@ -3,7 +3,8 @@
 import { attachDatePickers, isoToday, isoToFr, addDays } from './datepick.js';
 import { buildReceipt, dt, amountWords, cur, money } from './docs-pdf.js';
 import { buildDocDT, dataFacture, dataBL } from './docs-dt.js';
-import { staffList, gset, nextNumber, peekNumber, ensureClient, clientSnap, orderTotal, advancesTotal, delivered, deliveryState, invoicesOf, invoicedLines, advanceUsed, paidOf, invoiceState, orderState, groupInvoiceLines, invoiceTotals, rid, r3 } from './gestion-core.js';
+import { attachRefPicker } from './refpick.js';
+import { staffList, gset, nextNumber, peekNumber, ensureClient, clientSnap, orderTotal, advancesTotal, delivered, deliveryState, invoicesOf, invoicedLines, advanceUsed, paidOf, invoiceState, orderState, groupInvoiceLines, invoiceTotals, rid, r3, invOrderIds, lineOrderId, invBlIds, blInvoiced, blsToInvoice, invoiceGroups, groupTitle } from './gestion-core.js';
 
 const D = window.uniformDesktop;
 const $ = (s, r = document) => r.querySelector(s);
@@ -112,7 +113,7 @@ function ordersView() {
 }
 function orderDetail(o) {
   const t = orderTotal(o), adv = advancesTotal(o), del = delivered(db, o), inv = invoicedLines(db, o), st = orderState(db, o), locked = st === 'annulee';
-  const bls = db.bls.filter((b) => b.orderId === o.id), invs = db.invoices.filter((i) => i.orderId === o.id);
+  const bls = db.bls.filter((b) => b.orderId === o.id), invs = db.invoices.filter((i) => invOrderIds(i).includes(o.id));
   const ds = deliveryState(db, o);
   const htT = r3((o.lines || []).reduce((s, l) => s + (+l.qty || 0) * puHTo(l), 0));
   const lines = (o.lines || []).map((l, i) => { const st = l.src === 'studio';
@@ -148,9 +149,9 @@ function blsView() {
   const L = db.bls.slice().sort((a, b) => String(b.date + b.number).localeCompare(String(a.date + a.number))).filter((b) => !q || norm([b.number, b.orderNumber, b.clientPO, b.client.name].join(' ')).includes(norm(q))).filter((b) => !flt || (b.status || 'livre') === flt);
   const b = db.bls.find((x) => x.id === selId);
   return `<div class="split"><aside class="list"><div class="lh">${toolbar('Rechercher : n° BL, commande, client…', [['livre', 'Livré'], ['annule', 'Annulé']])}<button class="btn sm" data-act="freebl">+ Bon de livraison</button></div>
-    ${L.length ? L.map((x) => `<button class="li ${x.id === selId ? 'on' : ''}" data-sel="${x.id}"><div><b>${esc(x.number)}</b>${chip(x.status || 'livre')}</div><div>${esc(x.client.name)}</div><small>${isoToFr(x.date)} · commande ${esc(x.orderNumber)} · ${(x.lines || []).reduce((s, l) => s + (+l.qty || 0), 0)} pcs</small></button>`).join('') : '<p class="empty">Aucun bon de livraison.<br><small>Créez-les depuis une commande ou directement (« + Bon de livraison »).</small></p>'}</aside>
-    <section class="detail">${b ? `<div class="dh"><div><h2>Bon de livraison ${esc(b.number)}</h2>${chip(b.status || 'livre')}</div><div class="row"><button class="btn" data-act="blpdf">PDF</button>${b.status === 'annule' ? '' : `<button class="btn ghost" data-act="blinv" ${db.invoices.some((i) => i.status !== 'annulee' && (i.blIds || []).includes(b.id)) ? 'disabled title="Déjà facturé"' : ''}>Convertir en facture</button><button class="btn ghost" data-act="blcancel">Annuler le BL</button>`}</div></div>
-      <div class="kv"><span>Date</span><b>${isoToFr(b.date)}</b><span>Client</span><b>${esc(b.client.name)}</b><span>Commande</span><b><button class="linkb" data-open="orders:${b.orderId}">${esc(b.orderNumber)}</button></b><span>BC client</span><b>${esc(b.clientPO || '—')}</b></div>
+    ${L.length ? L.map((x) => `<button class="li ${x.id === selId ? 'on' : ''}" data-sel="${x.id}"><div><b>${esc(x.number)}</b>${chip(x.status || 'livre')}</div><div>${esc(x.client.name)}</div><small>${isoToFr(x.date)} · commande ${esc(x.orderNumber)} · ${(x.lines || []).reduce((s, l) => s + (+l.qty || 0), 0)} pcs${x.status !== 'annule' && blInvoiced(db, x) ? ' · facturé ' + esc(blInvoiced(db, x).number) : x.status !== 'annule' ? ' · <b>à facturer</b>' : ''}</small></button>`).join('') : '<p class="empty">Aucun bon de livraison.<br><small>Créez-les depuis une commande ou directement (« + Bon de livraison »).</small></p>'}</aside>
+    <section class="detail">${b ? `<div class="dh"><div><h2>Bon de livraison ${esc(b.number)}</h2>${chip(b.status || 'livre')}</div><div class="row"><button class="btn" data-act="blpdf">PDF</button>${b.status === 'annule' ? '' : `<button class="btn ghost" data-act="blinv" ${blInvoiced(db, b) ? 'disabled title="Déjà facturé"' : 'title="Facturer ce BL (vous pourrez cocher d’autres BL du même client)"'}>Convertir en facture</button><button class="btn ghost" data-act="blcancel">Annuler le BL</button>`}</div></div>
+      <div class="kv"><span>Date</span><b>${isoToFr(b.date)}</b><span>Client</span><b>${esc(b.client.name)}</b><span>Commande</span><b><button class="linkb" data-open="orders:${b.orderId}">${esc(b.orderNumber)}</button></b><span>BC client</span><b>${esc(b.clientPO || '—')}</b>${blInvoiced(db, b) ? `<span>Facture</span><b><button class="linkb" data-open="invoices:${blInvoiced(db, b).id}">${esc(blInvoiced(db, b).number)}</button></b>` : ''}</div>
       ${blEditable(b) ? '<p class="hint">Ce BL n’est pas encore facturé : vous pouvez corriger une quantité ou supprimer une ligne (le reste redevient « à livrer »).</p>' : ''}
       <table class="t ed"><thead><tr><th>Réf.</th><th>Désignation</th><th>Service</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th><th></th></tr></thead><tbody>${(b.lines || []).map((l, k) => `<tr ${ficheAttr(l.article, b.orderId)}><td class="mono small">${esc(l.article || '')}</td><td>${esc(l.designation)}</td><td>${esc(l.staff || '')}</td><td>${esc(l.color || '')}</td><td>${esc(l.size || '')}</td>
         <td class="n b">${blEditable(b) ? `<input type="number" min="1" step="1" data-bll="${k}" value="${l.qty}">` : l.qty}</td><td>${blEditable(b) ? `<button class="ib" data-bldel="${k}" title="Supprimer la ligne">✕</button>` : ''}</td></tr>`).join('')}</tbody></table>
@@ -159,10 +160,10 @@ function blsView() {
 
 /* ---- factures */
 function invoicesView() {
-  const L = db.invoices.slice().sort((a, b) => String(b.date + b.number).localeCompare(String(a.date + a.number))).filter((i) => !q || norm([i.number, i.orderNumber, i.clientPO, i.client.name].join(' ')).includes(norm(q)))
+  const L = db.invoices.slice().sort((a, b) => String(b.date + b.number).localeCompare(String(a.date + a.number))).filter((i) => !q || norm([i.number, i.orderNumber, ...(i.orderNumbers || []), ...(i.blNumbers || []), i.clientPO, i.client.name].join(' ')).includes(norm(q)))
     .filter((i) => !flt || (flt === 'annulee' ? i.status === 'annulee' : i.status !== 'annulee' && invoiceState(i) === flt));
   const i = db.invoices.find((x) => x.id === selId);
-  return `<div class="split"><aside class="list"><div class="lh">${toolbar('Rechercher : n° facture, client, BC…', [['impayee', 'Non payée'], ['partielle', 'Payée en partie'], ['payee', 'Payée'], ['annulee', 'Annulée']])}<button class="btn sm" data-act="freeinv">+ Facture</button></div>
+  return `<div class="split"><aside class="list"><div class="lh">${toolbar('Rechercher : n° facture, client, BC…', [['impayee', 'Non payée'], ['partielle', 'Payée en partie'], ['payee', 'Payée'], ['annulee', 'Annulée']])}<div class="row" style="flex-direction:column;gap:4px"><button class="btn sm" data-act="blsinv" title="${G.multiBL !== false ? 'Choisir un client puis cocher un ou plusieurs de ses BL non facturés' : 'Facturation multi-BL désactivée (Paramètres › Factures) : un BL par facture'}">${G.multiBL !== false ? 'Facturer des BL' : 'Facturer un BL'}${blsToInvoice(db).length ? ` (${blsToInvoice(db).length})` : ''}</button><button class="btn sm ghost" data-act="freeinv">+ Facture</button></div></div>
     ${L.length ? L.map((x) => { const X = invoiceTotals(x); return `<button class="li ${x.id === selId ? 'on' : ''}" data-sel="${x.id}"><div><b>${esc(x.number)}</b>${x.status === 'annulee' ? chip('annulee') : invChip(x)}</div><div>${esc(x.client.name)}</div><small>${isoToFr(x.date)} · ${money(X.net, cur(x))}${x.status !== 'annulee' && paidOf(x) && invoiceState(x) !== 'payee' ? ' · reste ' + money(X.net - paidOf(x), cur(x)) : ''}</small></button>`; }).join('') : '<p class="empty">Aucune facture.<br><small>Créez-les depuis une commande ou un BL, ou « + Facture ».</small></p>'}</aside>
     <section class="detail">${i ? invoiceDetail(i) : '<p class="empty">Sélectionnez une facture.</p>'}</section></div>`;
 }
@@ -172,8 +173,9 @@ function invoiceDetail(i) {
   return `<div class="dh"><div><h2>Facture ${esc(i.number)}</h2>${off ? chip('annulee') : invChip(i)}</div><div class="row"><button class="btn" data-act="invpdf">PDF</button>${invEditable(i) ? '<button class="btn ghost" data-act="invedit">Modifier les lignes</button>' : ''}${off ? '' : '<button class="btn ghost" data-act="invcancel">Annuler la facture</button>'}</div></div>
     ${!off && !invEditable(i) ? '<p class="hint">Facture réglée (règlement ou avoir) : ses lignes ne se modifient plus — corrigez par un avoir (Commercial › Avoirs).</p>' : ''}
     <div class="kv"><span>Date</span><b>${isoToFr(i.date)}</b><span>Échéance</span><b class="${!off && rest > 0 && i.due < isoToday() ? 'r' : ''}">${isoToFr(i.due)}</b><span>Client</span><b>${esc(i.client.name)}</b>
-      <span>Commande</span><b>${i.orderId ? `<button class="linkb" data-open="orders:${i.orderId}">${esc(i.orderNumber)}</button>` : '—'}</b><span>BL</span><b>${esc((i.blNumbers || []).join(', ') || '—')}</b><span>BC client</span><b>${esc(i.clientPO || '—')}</b>${i.export ? `<span>Vente</span><b>Exportation · ${esc(C)}${i.incoterm ? ' · ' + esc(i.incoterm) : ''}</b>` : ''}${i.ttnRef ? `<span>Réf. TTN</span><b>${esc(i.ttnRef)}</b>` : ''}</div>
-    <table class="t"><thead><tr><th>Réf.</th><th>Désignation</th><th class="n">Qté</th><th class="n">PRIX H.T.</th><th class="n">Remise</th><th class="n">Total H.T.</th></tr></thead><tbody>${X.lines.map((l) => `<tr ${ficheAttr(l.article, i.orderId)}><td class="mono small">${esc(l.article || '')}</td><td>${esc(l.designation)}${l.staff ? ' <span class="mute small">· ' + esc(l.staff) + '</span>' : ''}</td><td class="n">${l.qty}</td><td class="n">${dt(l.puHT)}</td><td class="n">${l.remise ? l.remise + ' %' : ''}</td><td class="n b">${dt(l.totHT)}</td></tr>`).join('')}</tbody></table>
+      <span>Commande${invOrderIds(i).length > 1 ? 's' : ''}</span><b>${invOrderIds(i).length ? invOrderIds(i).map((oid, k) => { const o = db.orders.find((z) => z.id === oid); return `<button class="linkb" data-open="orders:${oid}">${esc((o && o.number) || (i.orderNumbers || [])[k] || i.orderNumber || '?')}</button>`; }).join(', ') : '—'}</b><span>BL</span><b>${invBlIds(i).length ? invBlIds(i).map((bid, k) => `<button class="linkb" data-open="bls:${bid}">${esc((i.blNumbers || [])[k] || '?')}</button>`).join(', ') : '—'}</b><span>BC client</span><b>${esc(i.clientPO || '—')}</b>${i.export ? `<span>Vente</span><b>Exportation · ${esc(C)}${i.incoterm ? ' · ' + esc(i.incoterm) : ''}</b>` : ''}${i.ttnRef ? `<span>Réf. TTN</span><b>${esc(i.ttnRef)}</b>` : ''}</div>
+    <table class="t"><thead><tr><th>Réf.</th><th>Désignation</th><th class="n">Qté</th><th class="n">PRIX H.T.</th><th class="n">Remise</th><th class="n">Total H.T.</th></tr></thead><tbody>${invoiceGroups(i, X.lines).map((g) => `${g.titre ? `<tr class="grp"><td colspan="6">${esc(g.titre)}</td></tr>` : ''}${g.lignes.map(({ l }) => `<tr ${ficheAttr(l.article, lineOrderId(i, l))}><td class="mono small">${esc(l.article || '')}</td><td>${esc(l.designation)}${l.staff ? ' <span class="mute small">· ' + esc(l.staff) + '</span>' : ''}</td><td class="n">${l.qty}</td><td class="n">${dt(l.puHT)}</td><td class="n">${l.remise ? l.remise + ' %' : ''}</td><td class="n b">${dt(l.totHT)}</td></tr>`).join('')}`).join('')}</tbody></table>
+    ${recapBL(i)}
     <div class="tot"><div><span>Total H.T.</span><b>${M(X.ht)}</b></div>${X.fodec ? `<div><span>FODEC ${+i.fodec} %</span><b>${M(X.fodec)}</b></div>` : ''}<div><span>TVA ${i.tva} %</span><b>${M(X.tva)}</b></div><div><span>Total TTC</span><b>${M(X.ttc)}</b></div>${X.timbre ? `<div><span>Timbre</span><b>${M(X.timbre)}</b></div>` : ''}<div class="big"><span>Net à payer</span><b>${M(X.net)}</b></div>
       ${+i.advance ? `<div><span>Avance déduite</span><b>- ${M(i.advance)}</b></div>` : ''}${(i.payments || []).map((p) => `<div><span>Règlement ${isoToFr(p.date)} · ${esc(p.mode)}${p.ref ? ' ' + esc(p.ref) : ''}</span><b>- ${M(p.amount)}</b></div>`).join('')}
       <div class="big ${rest > 0 ? 'due' : 'ok'}"><span>Reste à payer</span><b>${M(rest)}</b></div></div>
@@ -308,7 +310,8 @@ async function act(k, btn) {
   else if (k === 'newinv' && o) await newInvoice(o, null);
   else if (k === 'blpdf') { const b = db.bls.find((x) => x.id === selId); await pdfBL(b); }
   else if (k === 'blcancel') { const b = db.bls.find((x) => x.id === selId); if (db.invoices.some((i) => i.status !== 'annulee' && (i.blIds || []).includes(b.id))) return toast('Ce BL est facturé : annulez d’abord la facture.', true); if (!confirm(`Annuler le BL ${b.number} ? Les quantités redeviennent « à livrer ».`)) return; b.status = 'annule'; await put('bls', b); render(true); }
-  else if (k === 'blinv') { const b = db.bls.find((x) => x.id === selId), ord = db.orders.find((x) => x.id === b.orderId); await newInvoice(ord, b); }
+  else if (k === 'blinv') { const b = db.bls.find((x) => x.id === selId); await invoiceFromBLs(b); }
+  else if (k === 'blsinv') await invoiceFromBLs(null);
   else if (k === 'invpdf') { const i = db.invoices.find((x) => x.id === selId); await pdfFacture(i); }
   else if (k === 'invedit') { const i = db.invoices.find((x) => x.id === selId); await editInvoice(i); }
   else if (k === 'invcancel') { const i = db.invoices.find((x) => x.id === selId); if (!confirm(`Annuler la facture ${i.number} ? Le numéro reste attribué (pas de trou dans la numérotation) et la facture apparaît « Annulée ».`)) return; i.status = 'annulee'; await put('invoices', i); render(true); }
@@ -363,11 +366,75 @@ async function newBLDirect() {
   await pdfBL(bl);
 }
 
-async function newInvoice(o, bl) {
+// 0.13.0 : récapitulatif des BL et commandes d'une facture (écran)
+function recapBL(i) {
+  const ids = invBlIds(i); if (!ids.length) return '';
+  const rows = ids.map((bid, k) => { const b = db.bls.find((x) => x.id === bid) || {}, l0 = (i.lines || []).find((l) => l.blId === bid) || {};
+    const pcs = (i.lines || []).filter((l) => l.blId === bid && !l.service && l.artType !== 'prestation').reduce((s2, l) => s2 + (+l.qty || 0), 0);
+    return `<tr data-open="bls:${bid}"><td><b>${esc((i.blNumbers || [])[k] || b.number || '?')}</b></td><td>${isoToFr(b.date || l0.blDate || '')}</td><td>${esc(l0.orderNumber || b.orderNumber || '')}</td><td>${esc(l0.clientPO || b.clientPO || '')}</td><td class="n">${pcs || ''}</td></tr>`; }).join('');
+  return `<h3>Récapitulatif des BL facturés (${ids.length})</h3><table class="t"><thead><tr><th>BL</th><th>Date</th><th>Commande</th><th>BC client</th><th class="n">Pièces facturées</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+const blPieces = (b) => (b.lines || []).reduce((s2, l) => s2 + (+l.qty || 0), 0);
+const sameClient = (a, b) => (a && a.id && b && b.id ? a.id === b.id : norm(a && a.name) === norm(b && b.name));
+/**
+ * Facture de plusieurs BL d'un même client : choix du client, cases à cocher des BL non facturés,
+ * puis lignes regroupées par BL (une ligne par BL, jamais fusionnées), avec les références BL / commande / BC client.
+ */
+async function invoiceFromBLs(b0) {
+  const libres = blsToInvoice(db);
+  if (!libres.length) return toast('Aucun BL à facturer : tous les BL sont déjà facturés ou annulés.', true);
+  let client = b0 ? b0.client : null;
+  if (!client) {
+    const parC = new Map(); for (const b of libres) { const k = b.client.id || norm(b.client.name); if (!parC.has(k)) parC.set(k, { c: b.client, n: 0 }); parC.get(k).n++; }
+    const L = [...parC.entries()].sort((a, b) => a[1].c.name.localeCompare(b[1].c.name, 'fr'));
+    const r0 = await ask({ title: 'Facturer des BL · client', text: 'Une facture regroupe un ou plusieurs BL d’un même client. Choisissez le client : ses BL non facturés s’affichent ensuite.', fields: [
+      { k: 'cl', label: 'Client', type: 'select', value: L[0][0], options: L.map(([k, x]) => [k, `${x.c.name} — ${x.n} BL à facturer`]) }] });
+    if (!r0) return; client = parC.get(r0.cl).c;
+  }
+  const dispo = libres.filter((b) => sameClient(b.client, client)).sort((a, b) => String(a.date + a.number).localeCompare(String(b.date + b.number)));
+  if (!dispo.length) return toast('Ce client n’a aucun BL à facturer.', true);
+  const oNum = (b) => { const o = db.orders.find((x) => x.id === b.orderId); return (o && o.number) || b.orderNumber || ''; };
+  const MULTI = G.multiBL !== false;
+  if (!MULTI && b0) return newInvoice(db.orders.find((x) => x.id === b0.orderId), b0);
+  if (!MULTI) { // un seul BL par facture : choix du BL, puis facture « selon le BL » (comportement d'avant 0.13.0)
+    const r2 = await ask({ title: `Facturer un BL · ${client.name}`, text: 'La facturation multi-BL est désactivée (Paramètres › Factures) : une facture reprend un seul BL.', fields: [
+      { k: 'bl', label: 'BL à facturer', type: 'select', value: dispo[0].id, options: dispo.map((b) => [b.id, `${b.number} du ${isoToFr(b.date)} — commande ${oNum(b)} — ${blPieces(b)} pcs`]) }] });
+    if (!r2) return; const b = dispo.find((x) => x.id === r2.bl); return newInvoice(db.orders.find((x) => x.id === b.orderId), b);
+  }
+  const r1 = await ask({ title: `Facturer des BL · ${client.name}`, wide: true, okLabel: 'Préparer la facture', text: 'Cochez les BL à regrouper sur la même facture. Chaque BL garde ses lignes (jamais fusionnées) et ses références commande / BC client.', fields: [
+    { k: 'bls', type: 'checks', value: b0 ? [b0.id] : dispo.map((b) => b.id),
+      cols: [{ l: 'BL' }, { l: 'Date' }, { l: 'Commande' }, { l: 'BC client' }, { l: 'Pièces', n: true }],
+      rows: dispo.map((b) => ({ id: b.id, cells: [`<b>${esc(b.number)}</b>`, isoToFr(b.date), esc(oNum(b)), esc(b.clientPO || ''), String(blPieces(b))] })),
+      sum: (sel) => { const n = dispo.filter((b) => sel[b.id]); return n.length ? `<b>${n.length}</b> BL sélectionné${n.length > 1 ? 's' : ''} · ${n.reduce((s2, b) => s2 + blPieces(b), 0)} pièces · commande${new Set(n.map((b) => b.orderId)).size > 1 ? 's' : ''} ${[...new Set(n.map(oNum))].join(', ')}` : 'Aucun BL sélectionné.'; } }] });
+  if (!r1) return;
+  const sel = dispo.filter((b) => r1.bls[b.id]);
+  if (!sel.length) return toast('Cochez au moins un BL.', true);
+  // lignes : par BL, quantités livrées plafonnées au reste à facturer de la commande (les BL déjà pris dans cette facture comptent)
+  const orders = [], restBy = {}, lines = [], servDone = new Set();
+  for (const b of sel) {
+    const o = db.orders.find((x) => x.id === b.orderId);
+    if (!o) return toast(`Commande du BL ${b.number} introuvable.`, true);
+    if (o.status === 'annulee') return toast(`La commande ${o.number} du BL ${b.number} est annulée.`, true);
+    if (!restBy[o.id]) { orders.push(o); const inv = invoicedLines(db, o); restBy[o.id] = Object.fromEntries(o.lines.map((l) => [l.id, Math.max(0, (+l.qty || 0) - (inv[l.id] || 0))])); }
+    const rest = restBy[o.id], qty = {};
+    for (const l of b.lines || []) { const q = Math.min(rest[l.lineId] || 0, (+l.qty || 0) - (qty[l.lineId] || 0)); if (q > 0) { qty[l.lineId] = (qty[l.lineId] || 0) + q; rest[l.lineId] -= q; } }
+    if (!servDone.has(o.id)) { servDone.add(o.id); for (const l of o.lines) if (l.service && rest[l.id] > 0) { qty[l.id] = rest[l.id]; rest[l.id] = 0; } } // prestations (transport…) : avec le 1er BL de la commande
+    const st = studioIds(o);
+    for (const g of groupInvoiceLines(o.lines, qty)) { const ol = o.lines.find((x) => x.id === g.lineIds[0]) || {};
+      lines.push({ ...g, pu: puHTo(ol), article: ol.article || '', staff: ol.staff || '', ...(ol.service ? { service: true } : {}), ...(ol.artType ? { artType: ol.artType } : {}), ...(g.lineIds.some((id) => st.has(id)) ? { studio: true } : {}),
+        orderId: o.id, orderNumber: o.number, blId: b.id, blNumber: b.number, blDate: b.date, clientPO: b.clientPO || o.clientPO || '' }); }
+  }
+  if (!lines.length) return toast('Rien à facturer sur ces BL : leurs quantités sont déjà facturées.', true);
+  await newInvoice(orders[0], null, { orders, bls: sel, lines });
+}
+
+async function newInvoice(o, bl, multi) {
   const today = isoToday();
   let lines = [], blIds = [], src = 'free';
+  const MO = multi ? multi.orders : o ? [o] : [];
   const notInv = o ? db.bls.filter((b) => b.orderId === o.id && b.status !== 'annule' && !db.invoices.some((i) => i.status !== 'annulee' && (i.blIds || []).includes(b.id))) : [];
-  if (o) {
+  if (multi) { lines = multi.lines; blIds = multi.bls.map((b) => b.id); }
+  else if (o) {
     const inv = invoicedLines(db, o);
     const restQ = {}; for (const l of o.lines) restQ[l.id] = Math.max(0, (+l.qty || 0) - (inv[l.id] || 0));
     const sources = [['rest', 'Tout le reste à facturer de la commande'], ...notInv.map((b) => ['bl:' + b.id, `Selon le BL ${b.number} du ${isoToFr(b.date)}`])];
@@ -382,19 +449,20 @@ async function newInvoice(o, bl) {
     if (!lines.length) return toast('Rien à facturer : tout est déjà facturé.', true);
   }
   const client0 = o ? clientSnap(db.clients.find((c) => c.id === o.client.id) || o.client) : null;
-  const advLeft = o ? r3(Math.max(0, advancesTotal(o) - advanceUsed(db, o))) : 0;
+  const advBy = Object.fromEntries(MO.map((x) => [x.id, r3(Math.max(0, advancesTotal(x) - advanceUsed(db, x)))]));
+  const advLeft = r3(Object.values(advBy).reduce((s2, a) => s2 + a, 0));
   await loadArticles(); await loadRefs().catch(() => {});
-  const draft = { lines: lines.length ? lines : [blankLine(false)], tva: G.tva, timbre: G.timbre, fodec: +G.fodec || 0, pricesTTC: false, orderId: o ? o.id : '', fixed: !!o };
+  const draft = { lines: lines.length ? lines : [blankLine(false)], tva: G.tva, timbre: G.timbre, fodec: +G.fodec || 0, pricesTTC: false, orderId: o ? o.id : '', fixed: !!o, groups: !!multi };
   // ERP 0.7.0 : vente locale (DT, TVA 19 %, timbre) ou à l'exportation (EUR / USD, TVA 0 %, sans timbre — comptable 21/10/2026)
   const r00 = await ask({ title: 'Type de facture', fields: [{ k: 'kind', label: 'Vente', type: 'select', value: 'DT', options: [['DT', 'Locale — dinars (TVA ' + G.tva + ' %' + (+G.fodec ? ', FODEC ' + G.fodec + ' %' : '') + ', timbre ' + dt(G.timbre) + ' DT)'], ['EUR', 'Exportation — euros (TVA 0 %)'], ['USD', 'Exportation — dollars US (TVA 0 %)']] }] });
   if (!r00) return;
   const EXP = r00.kind !== 'DT';
   if (EXP) { draft.tva = 0; draft.timbre = 0; draft.fodec = 0; if (lines.length) toast('Facture export : vérifiez les prix H.T., ils doivent être saisis dans la devise choisie.'); }
-  const r = await ask({ title: o ? `Facture · commande ${o.number}${blIds.length ? ' · ' + db.bls.find((b) => b.id === blIds[0]).number : ''}` : 'Facture', wide: true, okLabel: 'Valider la facture', fields: [
+  const r = await ask({ title: multi ? `Facture · ${client0.name} · ${blIds.length} BL (${MO.map((x) => x.number).join(', ')})` : o ? `Facture · commande ${o.number}${blIds.length ? ' · ' + db.bls.find((b) => b.id === blIds[0]).number : ''}` : 'Facture', wide: true, okLabel: 'Valider la facture', fields: [
     ...(o ? [] : [{ k: 'client', label: 'Client', list: db.clients.map((c) => c.name) }, { k: 'clientPO', label: 'N° bon de commande client (facultatif)' }]),
     { k: 'date', label: 'Date de facture', type: 'date', value: today }, { k: 'due', label: 'Échéance', type: 'date', value: addDays(today, G.dueDays) },
     { k: 'lines', type: 'invlines', value: draft },
-    { k: 'advance', label: `Avance à déduire (DT)${o ? ` — disponible : ${dt(advLeft)}` : ''}`, type: 'number', value: String(advLeft) },
+    { k: 'advance', label: `Avance à déduire (DT)${o ? ` — disponible : ${dt(advLeft)}${MO.length > 1 && MO.some((x) => advBy[x.id]) ? ' (' + MO.filter((x) => advBy[x.id]).map((x) => x.number + ' ' + dt(advBy[x.id])).join(', ') + ')' : ''}` : ''}`, type: 'number', value: String(advLeft) },
     { k: 'paymentMode', label: 'Mode de règlement prévu', type: 'select', value: G.paymentModes[0] || '', options: [['', '—'], ...G.paymentModes.map((m) => [m, m])] },
     ...(EXP ? [{ k: 'incoterm', label: 'Incoterm 2020 (facultatif)', type: 'select', value: '', options: [['', '—'], ...['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF'].map((x) => [x, x])] }] : []),
     { k: 'ttnRef', label: 'Référence El Fatoora / TTN (si déjà attribuée)', value: '' },
@@ -405,10 +473,13 @@ async function newInvoice(o, bl) {
   let client = client0;
   if (!o) { if (!r.client.trim()) return toast('Indiquez le client.', true); client = clientSnap(await ensureClient(D, r.client)); }
   if (!CO.mf && !confirm('Le matricule fiscal de votre société n’est pas renseigné (Paramètres › Société & factures). Créer la facture quand même ?')) return;
-  const inv = { date: r.date, due: r.due, orderId: o ? o.id : '', orderNumber: o ? o.number : '', clientPO: o ? o.clientPO || '' : r.clientPO.trim(), blIds, blNumbers: blIds.map((id) => db.bls.find((b) => b.id === id).number), client,
+  const POs = [...new Set((multi ? multi.bls.map((b) => b.clientPO || (db.orders.find((x) => x.id === b.orderId) || {}).clientPO || '') : [o ? o.clientPO || '' : r.clientPO.trim()]).filter(Boolean))];
+  const inv = { date: r.date, due: r.due, orderId: o ? o.id : '', orderNumber: multi ? MO.map((x) => x.number).join(', ') : o ? o.number : '', clientPO: POs.join(', '), blIds, blNumbers: blIds.map((id) => db.bls.find((b) => b.id === id).number), client,
+    ...(multi ? { orderIds: MO.map((x) => x.id), orderNumbers: MO.map((x) => x.number), blDates: blIds.map((id) => db.bls.find((b) => b.id === id).date) } : {}),
     lines: L.map(({ studio, ...l }) => ({ ...l, qty: +l.qty, pu: r3(+l.pu), remise: Math.min(100, Math.max(0, +l.remise || 0)) })), tva: EXP ? 0 : +r.lines.tva, timbre: EXP ? 0 : +r.lines.timbre, fodec: EXP ? 0 : +G.fodec || 0, pricesTTC: false, advance: 0, payments: [], paymentMode: r.paymentMode, note: r.note.trim(), status: 'validee',
     ...(EXP ? { currency: r00.kind, export: true, incoterm: r.incoterm || '' } : {}), ...(r.ttnRef.trim() ? { ttnRef: r.ttnRef.trim() } : {}) };
   inv.advance = EXP ? 0 : r3(Math.min(Math.max(0, +r.advance || 0), advLeft || (o ? 0 : 0), invoiceTotals(inv).net));
+  if (multi && inv.advance > 0) { let rest = inv.advance; inv.advanceBy = {}; for (const x of MO) { const a = r3(Math.min(rest, advBy[x.id] || 0)); if (a > 0) { inv.advanceBy[x.id] = a; rest = r3(rest - a); } } }
   inv.number = await nextNumber(D, cat, 'invoice', r.date);
   let saved;
   try { saved = await put('invoices', inv); }
@@ -435,9 +506,9 @@ async function pdfBL(b) {
 }
 // quantités par taille d'une ligne de facture issue de la commande (plafond : commandé − facturé sur les autres factures)
 function capsFor(inv) {
-  const o = inv.orderId && db.orders.find((x) => x.id === inv.orderId); if (!o) return null;
-  const other = invoicedLines(db, o, inv.id), cap = {};
-  for (const l of o.lines) cap[l.id] = { max: Math.max(0, (+l.qty || 0) - (other[l.id] || 0)), label: [l.size, l.color].filter(Boolean).join(' · ') || l.designation };
+  const OS = invOrderIds(inv).map((id) => db.orders.find((x) => x.id === id)).filter(Boolean); if (!OS.length) return null;
+  const cap = {};
+  for (const o of OS) { const other = invoicedLines(db, o, inv.id); for (const l of o.lines) cap[l.id] = { max: Math.max(0, (+l.qty || 0) - (other[l.id] || 0)), label: [l.size, l.color].filter(Boolean).join(' · ') || l.designation }; }
   for (const l of inv.lines || []) for (const id of l.lineIds || []) if (!cap[id]) cap[id] = { max: +(l.qtyBy || {})[id] || 0, label: id.split('|').pop() };
   return cap;
 }
@@ -446,8 +517,8 @@ async function editInvoice(i0) {
   if (!invEditable(i)) return toast('Cette facture est réglée (règlement ou avoir) : établissez un avoir.', true);
   const cap = capsFor(i) || {};
   const ttc = i.pricesTTC !== false, kI = (l) => (ttc ? (1 + (+i.tva || 0) / 100) * (l.service || l.artType === 'prestation' ? 1 : 1 + (+i.fodec || 0) / 100) : 1);
-  const o0 = i.orderId && db.orders.find((x) => x.id === i.orderId), st = studioIds(o0);
-  const x0 = { lines: JSON.parse(JSON.stringify(i.lines || [])).map((l) => ({ ...l, _pu0: l.pu, _ht0: r3((+l.pu || 0) / kI(l)), pu: r3((+l.pu || 0) / kI(l)), ...((l.lineIds || []).some((id) => st.has(id)) ? { studio: true } : {}) })), tva: +i.tva || 0, timbre: +i.timbre || 0, fodec: +i.fodec || 0, pricesTTC: false, locked: true, caps: cap, orderId: i.orderId || '' };
+  const st = new Set(invOrderIds(i).flatMap((id) => [...studioIds(db.orders.find((x) => x.id === id))]));
+  const x0 = { lines: JSON.parse(JSON.stringify(i.lines || [])).map((l) => ({ ...l, _pu0: l.pu, _ht0: r3((+l.pu || 0) / kI(l)), pu: r3((+l.pu || 0) / kI(l)), ...((l.lineIds || []).some((id) => st.has(id)) ? { studio: true } : {}) })), tva: +i.tva || 0, timbre: +i.timbre || 0, fodec: +i.fodec || 0, pricesTTC: false, locked: true, caps: cap, orderId: i.orderId || '', groups: invBlIds(i).length > 1 };
   const r = await ask({ title: `Modifier la facture ${i.number}`, wide: true, okLabel: 'Enregistrer les modifications',
     text: 'Vous pouvez corriger la désignation, la quantité, le PRIX H.T. et la remise, ou supprimer une ligne (lignes « infographie » : prix et remise seulement). Le numéro, la date, le client et les taux ne changent pas. Chaque modification est tracée (journal d’audit). Une facture réglée se corrige par un avoir.',
     fields: [{ k: 'lines', type: 'invlines', value: x0 }] });
@@ -459,7 +530,7 @@ async function editInvoice(i0) {
     const y = { ...l, qty: +l.qty, pu: _pu0 !== undefined && r3(+l.pu) === _ht0 ? _pu0 : r3(+l.pu * kI(l)), remise: Math.min(100, Math.max(0, +l.remise || 0)) };
     if ((l.lineIds || []).length === 1) y.qtyBy = { [l.lineIds[0]]: y.qty }; // une seule taille : la quantité saisie est celle de la taille
     if ((l.lineIds || []).length > 1) { // libellé « (M×6, L×4) » remis à jour
-      const o = db.orders.find((z) => z.id === i.orderId), sz = (l.lineIds || []).map((id) => [o && (o.lines.find((z) => z.id === id) || {}).size, +y.qtyBy[id] || 0]).filter(([a, q]) => a && q > 0);
+      const o = db.orders.find((z) => z.id === lineOrderId(i, l)), sz = (l.lineIds || []).map((id) => [o && (o.lines.find((z) => z.id === id) || {}).size, +y.qtyBy[id] || 0]).filter(([a, q]) => a && q > 0);
       if (sz.length) y.designation = String(y.designation).replace(/\s*\([^()]*×[^()]*\)\s*$/, '') + ` (${sz.map(([a, q]) => `${a}×${q}`).join(', ')})`;
       y.lineIds = l.lineIds.filter((id) => +y.qtyBy[id] > 0); y.qtyBy = Object.fromEntries(y.lineIds.map((id) => [id, +l.qtyBy[id]]));
     }
@@ -484,7 +555,7 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
   ASK_OPEN = true;
   return new Promise((resolve) => {
     const dlg = $('#dlg'), v = {}; let full = wide, mini = false;
-    for (const f of fields) v[f.k] = f.type === 'table' ? Object.fromEntries(f.rows.map((r) => [r.id, r.max])) : f.type === 'invlines' ? JSON.parse(JSON.stringify(f.value)) : f.type === 'check' ? false : (f.value ?? '');
+    for (const f of fields) v[f.k] = f.type === 'checks' ? Object.fromEntries(f.rows.map((r) => [r.id, (f.value || []).includes(r.id)])) : f.type === 'table' ? Object.fromEntries(f.rows.map((r) => [r.id, r.max])) : f.type === 'invlines' ? JSON.parse(JSON.stringify(f.value)) : f.type === 'check' ? false : (f.value ?? '');
     const staffs = staffList(cat);
     const invT = (x) => { const X = invoiceTotals({ ...x, pricesTTC: false }); return x.noTotals ? `<div class="tot sm"><div class="big"><span>Total H.T.</span><b>${M(X.ht)}</b></div></div>` : `<div class="tot sm"><div><span>Total H.T.</span><b>${M(X.ht)}</b></div>${X.remise ? `<div><span>dont remises</span><b>${M(X.remise)}</b></div>` : ''}${X.fodec ? `<div><span>FODEC ${+x.fodec} %</span><b>${M(X.fodec)}</b></div>` : ''}<div><span>TVA ${+x.tva} %</span><b>${M(X.tva)}</b></div><div><span>Total TTC</span><b>${M(X.ttc)}</b></div><div><span>Timbre</span><b>${M(X.timbre)}</b></div><div class="big"><span>Net à payer</span><b>${M(X.net)}</b></div></div>`; };
     const lineHT = (l) => r3((+l.qty || 0) * (+l.pu || 0) * (1 - Math.min(100, Math.max(0, +l.remise || 0)) / 100));
@@ -492,11 +563,13 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
       if (f.type === 'select') return `<label>${esc(f.label)}<select data-k="${f.k}">${f.options.map(([k, l]) => `<option value="${esc(k)}" ${k === v[f.k] ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
       if (f.type === 'date') return `<label>${esc(f.label)}<input data-date data-k="${f.k}" value="${esc(v[f.k])}" ${f.k === 'date' ? 'required' : ''}></label>`;
       if (f.type === 'check') return `<label class="chk"><input type="checkbox" data-k="${f.k}"> ${esc(f.label)}</label>`;
+      if (f.type === 'checks') return `<div class="w2"><table class="t ed"><thead><tr><th style="width:34px"><input type="checkbox" data-ckall="${f.k}" title="Tout cocher / décocher" ${f.rows.every((r) => v[f.k][r.id]) ? 'checked' : ''}></th>${f.cols.map((c) => `<th class="${c.n ? 'n' : ''}">${esc(c.l)}</th>`).join('')}</tr></thead><tbody>${f.rows.map((r) => `<tr class="ckrow ${v[f.k][r.id] ? 'on' : ''}"><td><input type="checkbox" data-ck="${f.k}" data-id="${esc(r.id)}" ${v[f.k][r.id] ? 'checked' : ''}></td>${r.cells.map((c, i) => `<td class="${f.cols[i].n ? 'n' : ''}">${c}</td>`).join('')}</tr>`).join('')}</tbody></table>
+        <p class="hint" data-cksum="${f.k}">${f.sum ? f.sum(v[f.k]) : ''}</p></div>`;
       if (f.type === 'table') return `<div class="w2"><table class="t ed"><thead><tr><th>Ligne</th><th class="n">Reste</th><th class="n">À livrer</th></tr></thead><tbody>${f.rows.map((r) => `<tr><td>${esc(r.label)}</td><td class="n mute">${r.max}</td><td class="n"><input type="number" min="0" max="${r.max}" step="1" data-tk="${f.k}" data-id="${esc(r.id)}" value="${v[f.k][r.id]}"></td></tr>`).join('')}</tbody></table>
         <div class="row"><button type="button" class="btn sm ghost" data-all="${f.k}">Tout livrer</button><button type="button" class="btn sm ghost" data-none="${f.k}">Tout à zéro</button></div></div>`;
       if (f.type === 'invlines') { const x = v[f.k], cs = !!x.cs, rem = x.remise !== false;
         const row = (l, i) => { const lk = !!l.studio;
-          return `<tr ${ficheAttr(l.article, x.orderId)}><td class="refc"><input data-il="${i}" data-c="article" value="${esc(l.article || '')}" placeholder="Réf." autocomplete="off" ${lk ? 'readonly' : ''}></td>
+          return `<tr ${ficheAttr(l.article, l.orderId || x.orderId)}><td class="refc"><input data-il="${i}" data-c="article" value="${esc(l.article || '')}" placeholder="Réf." autocomplete="off" ${lk ? 'readonly' : ''}></td>
             <td><input data-il="${i}" data-c="designation" value="${esc(l.designation)}" ${lk ? 'readonly' : ''}>${lk ? '<span class="tag" title="Commande saisie en Infographie : seuls le prix et la remise se modifient">infographie</span>' : ''}</td>
             <td><select data-il="${i}" data-c="staff" ${lk ? 'disabled' : ''}><option value="">—</option>${[...new Set([...staffs, l.staff].filter(Boolean))].map((s2) => `<option ${s2 === l.staff ? 'selected' : ''}>${esc(s2)}</option>`).join('')}</select></td>
             ${cs ? `<td><input data-il="${i}" data-c="color" value="${esc(l.color || '')}" class="w-s"></td><td><input data-il="${i}" data-c="size" value="${esc(l.size || '')}" class="w-xs"></td>` : ''}
@@ -504,8 +577,10 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
             <td class="n"><input type="number" min="0" step="0.001" data-il="${i}" data-c="pu" value="${l.pu}"></td>
             ${rem ? `<td class="n"><input type="number" min="0" max="100" step="1" data-il="${i}" data-c="remise" value="${l.remise || 0}"></td>` : ''}
             <td class="n b" data-lt="${i}">${dt(lineHT(l))}</td><td>${lk ? '' : `<button type="button" class="ib" data-ildel="${i}" title="Supprimer la ligne">✕</button>`}</td></tr>`; };
-        return `<div class="w2 lines-ed"><table class="t ed"><thead><tr><th>Réf.</th><th>Désignation</th><th>Service</th>${cs ? '<th>Couleur</th><th>Taille</th>' : ''}<th class="n">Qté</th><th class="n">PRIX H.T.</th>${rem ? '<th class="n">Remise %</th>' : ''}<th class="n">Total H.T.</th><th></th></tr></thead><tbody>${x.lines.map(row).join('')}</tbody></table>
-          <div class="row">${x.fixed ? '' : '<button type="button" class="btn sm ghost" data-iladd>+ Ligne</button>'}${x.locked || x.noTotals ? (x.locked ? '<span class="hint">Taux et timbre de la facture émise : inchangés.</span>' : '') : `<label class="inl">TVA %<input type="number" step="0.5" min="0" data-ix="tva" value="${x.tva}"></label><label class="inl">Timbre DT<input type="number" step="0.1" min="0" data-ix="timbre" value="${x.timbre}"></label>`}<span class="hint">Tapez une référence ou une partie de la désignation : les produits finis et articles s’affichent.</span></div>
+        const ncol = 7 + (cs ? 2 : 0) + (rem ? 1 : 0);
+        const body = x.lines.some((l) => l.blId) ? invoiceGroups({ lines: x.lines }).map((g) => `<tr class="grp"><td colspan="${ncol}">${esc(g.titre)}</td></tr>${g.lignes.map(({ l, i }) => row(l, i)).join('')}`).join('') : x.lines.map(row).join('');
+        return `<div class="w2 lines-ed"><table class="t ed"><thead><tr><th>Réf.</th><th>Désignation</th><th>Service</th>${cs ? '<th>Couleur</th><th>Taille</th>' : ''}<th class="n">Qté</th><th class="n">PRIX H.T.</th>${rem ? '<th class="n">Remise %</th>' : ''}<th class="n">Total H.T.</th><th></th></tr></thead><tbody>${body}</tbody></table>
+          <div class="row">${x.fixed ? '' : '<button type="button" class="btn sm ghost" data-iladd>+ Ligne</button>'}${x.locked || x.noTotals ? (x.locked ? '<span class="hint">Taux et timbre de la facture émise : inchangés.</span>' : '') : `<label class="inl">TVA %<input type="number" step="0.5" min="0" data-ix="tva" value="${x.tva}"></label><label class="inl">Timbre DT<input type="number" step="0.1" min="0" data-ix="timbre" value="${x.timbre}"></label>`}<span class="hint">Cliquez dans Réf. : tous les produits s’affichent ; tapez pour filtrer, ↑ ↓ pour choisir, Entrée pour valider.</span></div>
           <div data-invtot>${invT(x)}</div></div>`; }
       return `<label class="${f.list ? 'w2' : ''}">${esc(f.label)}<input data-k="${f.k}" type="${f.type === 'number' ? 'number' : 'text'}" ${f.type === 'number' ? 'step="0.001" min="0"' : ''} value="${esc(v[f.k])}" placeholder="${esc(f.placeholder || '')}" ${f.list ? `list="dl-${f.k}"` : ''} autocomplete="off">${f.list ? `<datalist id="dl-${f.k}">${f.list.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>` : ''}</label>`;
     };
@@ -516,35 +591,37 @@ function ask({ title, text = '', fields = [], okLabel = 'Valider', wide = false 
       attachDatePickers(dlg); const f0 = dlg.querySelector('input[data-k]:not([data-date]),select[data-k]'); if (f0) setTimeout(() => f0.focus(), 30);
     };
     const inv = () => fields.find((f) => f.type === 'invlines');
-    const pop = () => document.getElementById('refpop');
-    const closePop = () => { const p0 = pop(); if (p0) p0.remove(); };
-    const showPop = (inp) => {
-      closePop(); const qq = norm(inp.value); if (!REFS.length) return;
-      const L = REFS.filter((r) => !qq || norm(r.ref + ' ' + r.designation).includes(qq)).slice(0, 14); if (!L.length) return;
-      const rc = inp.getBoundingClientRect(), p0 = document.createElement('div'); p0.id = 'refpop';
-      p0.style.left = Math.max(4, Math.min(rc.left, innerWidth - 620)) + 'px'; p0.style.top = (rc.bottom + 2) + 'px';
-      p0.innerHTML = `<table class="t"><thead><tr><th>Réf.</th><th>Désignation</th><th>Type</th><th class="n">PRIX H.T.</th></tr></thead><tbody>${L.map((r, k) => `<tr data-pk="${k}"><td class="mono b">${esc(r.ref)}</td><td>${esc(r.designation)}</td><td class="mute small">${esc(r.type)}</td><td class="n">${r.ht === null || r.ht === undefined ? '—' : dt(r.ht)}</td></tr>`).join('')}</tbody></table>`;
-      p0.onmousedown = (e) => { e.preventDefault(); const tr = e.target.closest('tr[data-pk]'); if (!tr) return; const r = L[+tr.dataset.pk], x = v[inv().k], l = x.lines[+inp.dataset.il];
+    // 0.13.0 : sélecteur de référence commun (liste complète au clic, filtrée à la frappe, 6 lignes, ↑ ↓ Entrée)
+    const RP = attachRefPicker(dlg, {
+      getItems: () => REFS, prix: true,
+      estRef: (el) => el.dataset.c === 'article' && el.dataset.il !== undefined,
+      choisir: (el, r) => { const x = v[inv().k], l = x.lines[+el.dataset.il]; if (!l) return;
         Object.assign(l, { article: r.ref, designation: r.designation, ...(r.ht !== null && r.ht !== undefined ? { pu: r3(+r.ht) } : {}), ...(r.service ? { service: true, artType: 'prestation' } : { service: false, artType: r.artType || (r.type === 'Produit fini' ? 'produit_fini' : '') }) });
-        closePop(); draw(); const nx = dlg.querySelector(`[data-il="${inp.dataset.il}"][data-c="qty"]`); if (nx) nx.focus(); };
-      document.body.appendChild(p0);
-    };
-    const done = (r) => { closePop(); ASK_OPEN = false; const m = $('#dlgmin'); if (m) m.remove(); dlg.hidden = true; dlg.classList.remove('mini'); dlg.innerHTML = ''; dlg.oninput = dlg.onchange = dlg.onclick = dlg.onsubmit = null; dlg.removeEventListener('focusout', fo); window.removeEventListener('keydown', ek); resolve(r); };
-    const ek = (e) => { if (mini) return; if (e.key === 'Escape') { if (pop()) { closePop(); return; } if (!document.querySelector('.dp-pop') && confirm('Fermer sans enregistrer ?')) done(null); } };
-    const fo = (e) => { if (e.target.dataset && e.target.dataset.c === 'article') setTimeout(closePop, 150); };
+        draw(); setTimeout(() => { const nx = dlg.querySelector(`[data-il="${el.dataset.il}"][data-c="qty"]`); if (nx) { nx.focus(); nx.select && nx.select(); } }, 60); },
+    });
+    const closePop = () => RP.fermer();
+    const done = (r) => { RP.detacher(); ASK_OPEN = false; const m = $('#dlgmin'); if (m) m.remove(); dlg.hidden = true; dlg.classList.remove('mini'); dlg.innerHTML = ''; dlg.oninput = dlg.onchange = dlg.onclick = dlg.onsubmit = null; dlg.removeEventListener('focusout', fo); window.removeEventListener('keydown', ek); resolve(r); };
+    const ek = (e) => { if (mini) return; if (e.key === 'Escape') { if (RP.ouvert()) { closePop(); return; } if (!document.querySelector('.dp-pop') && confirm('Fermer sans enregistrer ?')) done(null); } };
+    const fo = () => {};
     const minimize = () => { mini = true; closePop(); dlg.classList.add('mini'); const bar = document.createElement('button'); bar.id = 'dlgmin'; bar.type = 'button'; bar.innerHTML = `<span>▲</span> ${esc(title)} <small>(réduite — cliquez pour reprendre)</small>`; bar.onclick = () => { mini = false; dlg.classList.remove('mini'); bar.remove(); }; document.body.appendChild(bar); };
     const upd = (e) => {
       const t = e.target, ds = t.dataset;
       if (ds.k) v[ds.k] = t.type === 'checkbox' ? t.checked : t.matches('[data-date]') ? t.dataset.iso : t.value;
       else if (ds.tk) v[ds.tk][ds.id] = Math.min(+t.max, Math.max(0, Math.floor(+t.value || 0)));
+      else if (ds.ck || ds.ckall) { const k0 = ds.ck || ds.ckall, f = fields.find((x) => x.k === k0); if (e.type !== 'change') return;
+        if (ds.ckall) for (const r of f.rows) v[k0][r.id] = t.checked; else v[k0][ds.id] = t.checked;
+        dlg.querySelectorAll(`[data-ck="${k0}"]`).forEach((c) => { c.checked = !!v[k0][c.dataset.id]; c.closest('tr').classList.toggle('on', c.checked); });
+        const all = dlg.querySelector(`[data-ckall="${k0}"]`); if (all) all.checked = f.rows.every((r) => v[k0][r.id]);
+        const sm = dlg.querySelector(`[data-cksum="${k0}"]`); if (sm && f.sum) sm.innerHTML = f.sum(v[k0]); }
       else if (ds.il !== undefined) { const x = v[inv().k], l = x.lines[+ds.il]; l[ds.c] = ['designation', 'article', 'staff', 'color', 'size'].includes(ds.c) ? t.value : +t.value || 0;
-        if (ds.c === 'article' && e.type === 'input') { l.article = t.value.trim().toUpperCase(); showPop(t); }
-        if (ds.c === 'article' && e.type === 'change') { const r = REFS.find((y) => y.ref === t.value.trim().toUpperCase()); if (r && !l.designation) { setTimeout(() => { const tr = pop(); if (!tr) { Object.assign(l, { article: r.ref, designation: r.designation, ...(r.ht != null ? { pu: r3(+r.ht) } : {}), service: !!r.service }); draw(); } }, 160); } }
+        if (ds.c === 'article' && e.type === 'input') l.article = t.value.trim().toUpperCase();
+        if (ds.c === 'article' && e.type === 'change') { const r = REFS.find((y) => y.ref === t.value.trim().toUpperCase()); if (r && !l.designation) { setTimeout(() => { if (!RP.ouvert()) { Object.assign(l, { article: r.ref, designation: r.designation, ...(r.ht != null ? { pu: r3(+r.ht) } : {}), service: !!r.service }); draw(); } }, 160); } }
         const c = dlg.querySelector(`[data-lt="${ds.il}"]`); if (c) c.textContent = dt(lineHT(l)); dlg.querySelector('[data-invtot]').innerHTML = invT(x); }
       else if (ds.ix) { const x = v[inv().k]; x[ds.ix] = +t.value || 0; dlg.querySelector('[data-invtot]').innerHTML = invT(x); }
     };
     dlg.oninput = upd; dlg.onchange = upd; dlg.addEventListener('focusout', fo);
-    dlg.onclick = (e) => { const b = e.target.closest('button'); if (!b) return;
+    dlg.onclick = (e) => { const ckr = e.target.closest('tr.ckrow'); if (ckr && !e.target.matches('input')) { const c = ckr.querySelector('input[data-ck]'); if (c) c.click(); return; }
+      const b = e.target.closest('button'); if (!b) return;
       if (b.hasAttribute('data-x')) { if (!e.isTrusted || b.classList.contains('wx') ? confirm('Fermer sans enregistrer ?') : true) done(null); }
       else if (b.hasAttribute('data-wmin')) minimize();
       else if (b.hasAttribute('data-wmax')) { const fm = dlg.querySelector('form'); full = !full; fm.classList.toggle('full', full); b.textContent = full ? '❐' : '☐'; b.title = full ? 'Fenêtre' : 'Plein écran'; }

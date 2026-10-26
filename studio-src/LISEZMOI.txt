@@ -16,3 +16,10 @@ ERP 0.9.1 :
 ERP 0.10.0 :
 - gestion.js : put() affiche l'alerte « stock produits finis insuffisant » renvoyée par le serveur après un BL (alertes_stock).
   Les sources complètes (datepick.js…) ne sont pas dans ce dépôt : le bundle web/studio/gestion.js a été patché au même endroit (fonction vt).
+
+ERP 0.13.0 :
+- gestion-core.js : factures de plusieurs BL (orderIds, lignes avec orderId / blId / blNumber, advanceBy), invoicesOf / invoicedLines multi-commandes, invoiceGroups.
+- gestion.js : bouton « Facturer des BL » (client → cases à cocher → facture groupée par BL + récapitulatif), réglage multi-BL (G.multiBL).
+- docs-dt.js : impression groupée par BL + récapitulatif (lignesFactureDT).
+- refpick.js (nouveau) : sélecteur de référence (6 lignes, ↑ ↓ Entrée Échap), importé par gestion.js ; compilé à part pour l'ERP web :
+  npx esbuild src/refpick.js --bundle --minify --target=es2020 --format=iife --global-name=RefPick --outfile=…/erp/web/refpick.js

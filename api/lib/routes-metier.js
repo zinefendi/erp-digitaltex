@@ -60,6 +60,7 @@ async function avecParametres(db, donnees) {
   if (fv.tva_normale !== undefined) c.gestion.tva = fv.tva_normale;
   if (fv.timbre_fiscal !== undefined) c.gestion.timbre = fv.timbre_fiscal;
   c.gestion.fodec = fv.fodec || 0; // 0.9.1 : FODEC des ventes locales (Paramètres › Fiscalité)
+  c.gestion.multiBL = ((await db.query(`select valeur from parametres.options where code = 'facturation_multi_bl'`)).rows[0]?.valeur ?? 'oui') === 'oui'; // 0.13.0
   for (const [k, t] of [['orderPrefix', 'commande'], ['blPrefix', 'bl'], ['invoicePrefix', 'facture'], ['receiptPrefix', 'recu']]) if (n[t]) c.gestion[k] = n[t];
   return c;
 }
@@ -96,6 +97,64 @@ const leveM = (code, message) => Object.assign(new Error(message), { statusCode:
 async function autresDocs(c, col, orderId, sauf) {
   return (await c.query(`select donnees from commercial.documents where collection = $1 and donnees->>'orderId' = $2 and id <> $3`, [col, orderId, sauf])).rows.map((x) => x.donnees);
 }
+// 0.13.0 : commandes d'une facture (multi-BL : orderIds ; ancienne facture : orderId)
+const idsCommandes = (f) => (Array.isArray(f?.orderIds) && f.orderIds.length ? f.orderIds : f?.orderId ? [f.orderId] : []);
+const cmdLigne = (f, l) => l.orderId || (idsCommandes(f).length === 1 ? idsCommandes(f)[0] : f.orderId || '');
+/** Quantités déjà facturées par ligne de commande (factures non annulées, sauf `sauf`), multi-BL compris. */
+async function dejaFacture(c, orderId, sauf) {
+  const r = await c.query(`select donnees from commercial.documents where collection = 'invoices' and id <> $2 and donnees->>'status' <> 'annulee'
+    and (donnees->>'orderId' = $1 or donnees->'orderIds' ? $1)`, [orderId, sauf || '']);
+  const deja = {};
+  for (const { donnees: f } of r.rows) for (const l of f.lines || []) { if (cmdLigne(f, l) !== orderId) continue; for (const id of l.lineIds || []) deja[id] = (deja[id] || 0) + (+(l.qtyBy || {})[id] || 0); }
+  return deja;
+}
+/** Lignes rattachées à un BL (blId) : quantité par ligne de commande ≤ quantité livrée par ce BL (prestations exclues). */
+async function controlerQtesBL(c, rec) {
+  const parBL = {};
+  for (const l of rec.lines || []) if (l.blId) for (const id of l.lineIds || []) ((parBL[l.blId] ||= {})[id] = (parBL[l.blId][id] || 0) + (+(l.qtyBy || {})[id] || 0));
+  for (const [blId, q] of Object.entries(parBL)) {
+    if (!idsBL(rec).includes(blId)) throw leveM('bl_hors_facture', 'Une ligne est rattachée à un BL qui ne fait pas partie de la facture.');
+    const b = (await c.query(`select donnees from commercial.documents where collection = 'bls' and id = $1`, [blId])).rows[0]?.donnees;
+    if (!b) throw leveM('bl_introuvable', 'BL introuvable.');
+    const livre = {}; for (const x of b.lines || []) livre[x.lineId] = (livre[x.lineId] || 0) + (+x.qty || 0);
+    const o = (await c.query(`select donnees from commercial.documents where collection = 'orders' and id = $1`, [b.orderId])).rows[0]?.donnees;
+    const serv = new Set(((o && o.lines) || []).filter((x) => x.service || x.artType === 'prestation').map((x) => x.id));
+    for (const [id, n] of Object.entries(q)) {
+      if (serv.has(id)) continue;
+      if (livre[id] === undefined) throw leveM('ligne_hors_bl', `Une ligne de la facture ne figure pas sur le BL ${b.number}.`);
+      if (n > livre[id] + 0.0005) throw leveM('trop_facture', `BL ${b.number} : ${livre[id]} pièce(s) livrée(s) au plus pour cette ligne (facturé : ${n}).`);
+    }
+  }
+}
+const idsBL = (f) => (Array.isArray(f?.blIds) ? f.blIds : []);
+/**
+ * 0.13.0 : création d'une facture rattachée à un ou plusieurs BL.
+ * BL existants, non annulés, d'un même client, jamais déjà facturés (verrou par BL : deux postes ne facturent pas le même BL).
+ * Les commandes de la facture (orderIds) sont exactement celles des BL (+ éventuelle commande d'une facture « reste »).
+ */
+async function controlerFactureBL(c, rec) {
+  const ids = idsBL(rec);
+  if (!ids.length) return;
+  if (new Set(ids).size !== ids.length) throw leveM('bl_double', 'Un même BL figure deux fois dans la facture.');
+  if (ids.length > 200) throw leveM('bl_trop', 'Trop de BL dans une seule facture (200 au plus).');
+  for (const id of ids.slice().sort()) await c.query('select pg_advisory_xact_lock(727013, hashtext($1))', [id]);
+  const bls = [];
+  for (const id of ids) {
+    const b = (await c.query(`select donnees from commercial.documents where collection = 'bls' and id = $1 for update`, [id])).rows[0]?.donnees;
+    if (!b) throw leveM('bl_introuvable', 'Un des BL sélectionnés est introuvable.');
+    if (b.status === 'annule') throw leveM('bl_annule', `Le BL ${b.number} est annulé : il ne se facture pas.`);
+    const fac = (await c.query(`select donnees->>'number' n from commercial.documents where collection = 'invoices' and id <> $2 and donnees->>'status' <> 'annulee' and donnees->'blIds' ? $1 limit 1`, [id, rec.id || ''])).rows[0];
+    if (fac) throw leveM('bl_deja_facture', `Le BL ${b.number} est déjà facturé (${fac.n}).`);
+    bls.push(b);
+  }
+  const cli = new Set(bls.map((b) => b.client?.id || b.client?.name || ''));
+  if (cli.size > 1) throw leveM('bl_clients_differents', 'Les BL sélectionnés appartiennent à des clients différents : une facture ne regroupe que les BL d’un même client.');
+  if ((rec.client?.id || rec.client?.name || '') !== [...cli][0]) throw leveM('bl_client_facture', 'Le client de la facture doit être celui des BL.');
+  const cmds = new Set(bls.map((b) => b.orderId).filter(Boolean));
+  for (const oid of idsCommandes(rec)) if (!cmds.has(oid)) throw leveM('commande_hors_bl', 'La facture cite une commande qui ne correspond à aucun des BL sélectionnés.');
+  for (const l of rec.lines || []) if (l.orderId && !cmds.has(l.orderId)) throw leveM('commande_hors_bl', 'Une ligne de la facture vient d’une commande qui ne correspond à aucun des BL sélectionnés.');
+}
+
 async function controlerLignesFacture(c, rec, avant) {
   if (avant.ttnRef) throw leveM('facture_ttn', `La facture ${avant.number} a une référence El Fatoora (TTN) : elle ne se modifie plus. Établissez un avoir.`);
   if ((rec.payments || []).length || (avant.payments || []).length) throw leveM('facture_reglee', `La facture ${avant.number} a déjà un règlement : ses lignes ne se modifient plus. Établissez un avoir (Commercial › Avoirs).`);
@@ -117,38 +176,38 @@ async function controlerLignesFacture(c, rec, avant) {
       if (r3(ids.reduce((s, id) => s + (+qb[id] || 0), 0)) !== r3(l.qty)) throw leveM('ligne_invalide', `Ligne ${i + 1} : la quantité doit être la somme des quantités par taille.`);
     }
   });
-  // une ligne issue de la commande ne dépasse jamais ce qui reste à facturer sur la commande
-  if (avant.orderId) {
-    const o = (await c.query(`select donnees from commercial.documents where collection = 'orders' and id = $1`, [avant.orderId])).rows[0]?.donnees;
+  // une ligne issue d'une commande ne dépasse jamais ce qui reste à facturer sur cette commande
+  // 0.13.0 : facture multi-BL → plusieurs commandes ; chaque ligne porte son orderId (sinon la commande unique de la facture)
+  const cmdDe = (l) => l.orderId || (idsCommandes(avant).length === 1 ? idsCommandes(avant)[0] : avant.orderId || '');
+  for (const oid of [...new Set([...L, ...(avant.lines || [])].filter((l) => (l.lineIds || []).length).map(cmdDe).filter(Boolean))]) {
+    const o = (await c.query(`select donnees from commercial.documents where collection = 'orders' and id = $1`, [oid])).rows[0]?.donnees;
+    if (!o) continue;
+    const Lo = L.filter((l) => cmdDe(l) === oid), Ao = (avant.lines || []).filter((l) => cmdDe(l) === oid);
     // 0.10.1 : ligne issue d'une commande saisie en Infographie (Studio 3D) → seuls le prix et la remise se modifient
-    if (o) {
-      const studio = new Set((o.lines || []).filter((x) => x.src === 'studio').map((x) => x.id));
-      const sig = (l) => JSON.stringify([String(l.designation || '').trim(), Object.entries(l.qtyBy || {}).sort()]);
-      const avantSig = new Map((avant.lines || []).filter((l) => (l.lineIds || []).some((id) => studio.has(id))).map((l) => [(l.lineIds || []).slice().sort().join(','), sig(l)]));
-      for (const l of L) {
-        if (!(l.lineIds || []).some((id) => studio.has(id))) continue;
-        const k = (l.lineIds || []).slice().sort().join(',');
-        if (!avantSig.has(k) || avantSig.get(k) !== sig(l)) throw leveM('ligne_infographie', `« ${l.designation} » vient d’une commande saisie en Infographie : seuls le prix et la remise se modifient (pour retirer des pièces, établissez un avoir).`);
-      }
+    const studio = new Set((o.lines || []).filter((x) => x.src === 'studio').map((x) => x.id));
+    const sig = (l) => JSON.stringify([String(l.designation || '').trim(), Object.entries(l.qtyBy || {}).sort()]);
+    const avantSig = new Map(Ao.filter((l) => (l.lineIds || []).some((id) => studio.has(id))).map((l) => [(l.lineIds || []).slice().sort().join(','), sig(l)]));
+    for (const l of Lo) {
+      if (!(l.lineIds || []).some((id) => studio.has(id))) continue;
+      const k = (l.lineIds || []).slice().sort().join(',');
+      if (!avantSig.has(k) || avantSig.get(k) !== sig(l)) throw leveM('ligne_infographie', `« ${l.designation} » vient d’une commande saisie en Infographie : seuls le prix et la remise se modifient (pour retirer des pièces, établissez un avoir).`);
     }
-    if (o) {
-      const deja = {};
-      for (const f of await autresDocs(c, 'invoices', o.id, avant.id)) if (f.status !== 'annulee') for (const l of f.lines || []) for (const id of l.lineIds || []) deja[id] = (deja[id] || 0) + (+(l.qtyBy || {})[id] || 0);
-      const ici = {};
-      for (const l of L) for (const id of l.lineIds || []) ici[id] = (ici[id] || 0) + (+(l.qtyBy || {})[id] || 0);
-      const avantQ = {};
-      for (const l of avant.lines || []) for (const id of l.lineIds || []) avantQ[id] = (avantQ[id] || 0) + (+(l.qtyBy || {})[id] || 0);
-      for (const [id, q] of Object.entries(ici)) {
-        const ol = (o.lines || []).find((x) => x.id === id);
-        if (!ol) { // ligne retirée de la commande après facturation : on peut baisser, pas augmenter
-          if (q > (avantQ[id] || 0) + 0.0005) throw leveM('trop_facture', 'Cette ligne n’existe plus dans la commande : sa quantité ne peut que baisser.');
-          continue;
-        }
-        const max = r3((+ol.qty || 0) - (deja[id] || 0));
-        if (q > max + 0.0005) throw leveM('trop_facture', `« ${ol.designation}${ol.size ? ' ' + ol.size : ''} » : ${max} au plus à facturer (commande ${o.number} : ${+ol.qty || 0}, déjà facturé ailleurs : ${deja[id] || 0}).`);
+    const deja = await dejaFacture(c, o.id, avant.id);
+    const ici = {}, avantQ = {};
+    for (const l of Lo) for (const id of l.lineIds || []) ici[id] = (ici[id] || 0) + (+(l.qtyBy || {})[id] || 0);
+    for (const l of Ao) for (const id of l.lineIds || []) avantQ[id] = (avantQ[id] || 0) + (+(l.qtyBy || {})[id] || 0);
+    for (const [id, q] of Object.entries(ici)) {
+      const ol = (o.lines || []).find((x) => x.id === id);
+      if (!ol) { // ligne retirée de la commande après facturation : on peut baisser, pas augmenter
+        if (q > (avantQ[id] || 0) + 0.0005) throw leveM('trop_facture', 'Cette ligne n’existe plus dans la commande : sa quantité ne peut que baisser.');
+        continue;
       }
+      const max = r3((+ol.qty || 0) - (deja[id] || 0));
+      if (q > max + 0.0005) throw leveM('trop_facture', `« ${ol.designation}${ol.size ? ' ' + ol.size : ''} » : ${max} au plus à facturer (commande ${o.number} : ${+ol.qty || 0}, déjà facturé ailleurs : ${deja[id] || 0}).`);
     }
   }
+  // 0.13.0 : une ligne rattachée à un BL ne dépasse jamais la quantité livrée par ce BL
+  await controlerQtesBL(c, rec);
   if (r3(C.totauxFacture(rec).net) < r3(rec.advance) - 0.0005) throw leveM('avance_superieure', 'Le net de la facture deviendrait inférieur à l’avance déjà déduite.');
 }
 async function controlerLignesBL(c, rec, avant) {
@@ -312,6 +371,34 @@ module.exports = async function routesMetier(app) {
       }
       if (avant && col === 'orders' && rec.status === 'annulee' && avant.status !== 'annulee' && !D.peut(req.droits, 'commercial.commandes', 'annuler')) return erreur(reply, 403, 'interdit', 'Vos droits ne permettent pas d’annuler une commande.');
       if (col === 'invoices' && !avant && !rec.number) return erreur(reply, 400, 'numero_absent', 'Une facture doit avoir un numéro officiel.');
+      // 0.13.0 : facture de plusieurs BL (même client) — contrôles serveur à la création ; ensuite BL et commandes ne changent plus
+      if (col === 'invoices' && !avant && (idsBL(rec).length || Array.isArray(rec.orderIds) || (rec.lines || []).some((l) => l.orderId || l.blId))) {
+        try {
+          for (const l of rec.lines || []) if (l.orderId && !idsCommandes(rec).includes(l.orderId)) throw leveM('commande_hors_facture', 'Une ligne vient d’une commande qui n’est pas citée par la facture.');
+          // 0.13.0 : interrupteur de l'administrateur (Paramètres › Factures)
+          if (idsBL(rec).length > 1 || idsCommandes(rec).length > 1) {
+            const mb = (await c.query(`select valeur from parametres.options where code = 'facturation_multi_bl'`)).rows[0]?.valeur ?? 'oui';
+            if (mb !== 'oui') throw leveM('multi_bl_desactive', 'La facturation multi-BL est désactivée (Paramètres › Factures) : une facture ne reprend qu’un seul BL.');
+          }
+          await controlerFactureBL(c, rec);
+          await controlerQtesBL(c, rec);
+          for (const oid of idsCommandes(rec)) {
+            const o = (await c.query(`select donnees from commercial.documents where collection = 'orders' and id = $1`, [oid])).rows[0]?.donnees;
+            if (!o) throw leveM('commande_introuvable', 'Commande introuvable.');
+            if (o.status === 'annulee') throw leveM('commande_annulee', `La commande ${o.number} est annulée.`);
+            const deja = await dejaFacture(c, oid, rec.id || '');
+            const ici = {}; for (const l of rec.lines || []) if (cmdLigne(rec, l) === oid) for (const id of l.lineIds || []) ici[id] = (ici[id] || 0) + (+(l.qtyBy || {})[id] || 0);
+            for (const [id, q] of Object.entries(ici)) {
+              const ol = (o.lines || []).find((x) => x.id === id);
+              if (!ol) throw leveM('ligne_invalide', `Une ligne de la facture ne correspond pas à la commande ${o.number}.`);
+              const max = r3((+ol.qty || 0) - (deja[id] || 0));
+              if (q > max + 0.0005) throw leveM('trop_facture', `« ${ol.designation}${ol.size ? ' ' + ol.size : ''} » : ${max} au plus à facturer (commande ${o.number}).`);
+            }
+          }
+        } catch (e) { if (e.statusCode) return erreur(reply, e.statusCode, e.code, e.message); throw e; }
+      }
+      if (col === 'invoices' && avant && avant.status !== 'annulee' && (JSON.stringify(idsBL(rec)) !== JSON.stringify(idsBL(avant)) || JSON.stringify(idsCommandes(rec)) !== JSON.stringify(idsCommandes(avant))))
+        return erreur(reply, 400, 'champ_fige', 'Les BL et les commandes d’une facture émise ne changent pas (annulez-la puis refaites-la).');
       if (col === 'invoices' && !avant) rec = { ...rec, payments: (rec.payments || []).filter((p) => p && !p.enc && !p.avoir) };
       // 0.9.1 : FODEC fixé par le serveur à la création (taux en vigueur à la date de la facture) ; ventes locales en dinars seulement
       if (col === 'invoices' && !avant) {

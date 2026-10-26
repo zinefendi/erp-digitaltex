@@ -199,7 +199,7 @@ export async function buildBL(co, bl) {
 export async function buildInvoice(co, inv) {
   const d = await new Doc().init(`Facture ${inv.number}`);
   const C = cur(inv), m = (v) => money(v, C), exp = !!inv.export;
-  await d.header(co, exp ? 'FACTURE / INVOICE' : 'FACTURE', inv.number, [['Date :', fr(inv.date)], ['Échéance :', fr(inv.due)], ['Commande :', inv.orderNumber], ['BL :', (inv.blNumbers || []).join(', ')], ['BC client :', inv.clientPO], ['Incoterm :', inv.incoterm], ['Devise :', C !== 'DT' ? C : '']]);
+  await d.header(co, exp ? 'FACTURE / INVOICE' : 'FACTURE', inv.number, [['Date :', fr(inv.date)], ['Échéance :', fr(inv.due)], [(inv.orderNumbers || []).length > 1 ? 'Commandes :' : 'Commande :', (inv.orderNumbers || []).length ? inv.orderNumbers.join(', ') : inv.orderNumber], ['BL :', (inv.blNumbers || []).join(', ')], ['BC client :', inv.clientPO], ['Incoterm :', inv.incoterm], ['Devise :', C !== 'DT' ? C : '']]);
   d.clientBox(inv.client || {}, []);
   const X = invoiceTotals(inv), hasRem = (inv.lines || []).some((l) => +l.remise);
   const n = (v) => (C === 'DT' ? dt(v) : dt(v, 2));

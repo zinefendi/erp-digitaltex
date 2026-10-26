@@ -472,3 +472,97 @@ test('0.10.1 banques, scans des moyens de paiement, fiches techniques, recherche
   assert.ok((await pool.query(`select 1 from commercial.fichiers where id = $1 and annule`, [fj.id])).rowCount);
   assert.ok((await pool.query(`select 1 from noyau.audit where action = 'fichier_retire' and entite_id = $1`, [String(fj.id)])).rowCount);
 });
+
+test('0.13.0 facture de plusieurs BL : même client, BL non facturés, quantités ≤ livrées, références, annulation', async () => {
+  const num = async (kind, j = J.commercial) => (await appel('POST', '/api/commercial/numero', { jeton: j, body: { kind } })).json().numero;
+  const cmd = async (client, lines, po) => (await putG('orders', { number: await num('order'), status: 'en_cours', client, clientPO: po || '', lines }, J.commercial)).json();
+  const bl = async (o, lines, date) => (await putG('bls', { number: await num('bl'), date, orderId: o.id, orderNumber: o.number, client: o.client, clientPO: o.clientPO, lines, status: 'livre' }, J.commercial)).json();
+  const SOU = { id: 'cl-local', name: 'Hôtel Sousse' };
+  const o1 = await cmd(SOU, [{ id: 'm1', designation: 'Polo', size: 'M', qty: 10, pu: 23.8 }, { id: 'm2', designation: 'Transport', qty: 1, pu: 11.9, service: true }], 'BC-77');
+  const o2 = await cmd(SOU, [{ id: 'n1', designation: 'Polo', size: 'M', qty: 4, pu: 23.8 }]);
+  const autre = await cmd({ id: 'cl-export', name: 'Hotel Lyon SARL' }, [{ id: 'x1', designation: 'Polo', size: 'L', qty: 2, pu: 20 }]);
+  const b1 = await bl(o1, [{ lineId: 'm1', designation: 'Polo', size: 'M', qty: 6 }], `${AN}-07-01`);
+  const b2 = await bl(o1, [{ lineId: 'm1', designation: 'Polo', size: 'M', qty: 4 }], `${AN}-07-03`);
+  const b3 = await bl(o2, [{ lineId: 'n1', designation: 'Polo', size: 'M', qty: 4 }], `${AN}-07-04`);
+  const bx = await bl(autre, [{ lineId: 'x1', designation: 'Polo', size: 'L', qty: 2 }], `${AN}-07-04`);
+  const L = (b, o, oid, id, q, extra = {}) => ({ designation: 'Polo (M×' + q + ')', qty: q, pu: 20, lineIds: [id], qtyBy: { [id]: q }, orderId: oid, orderNumber: o.number, blId: b.id, blNumber: b.number, blDate: b.date, ...extra });
+  const base = async (extra) => ({ number: await num('invoice', J.compta), date: `${AN}-07-05`, client: SOU, tva: 19, timbre: 1, pricesTTC: false, payments: [], status: 'validee', ...extra });
+  // clients différents : refusé
+  let r = await putG('invoices', await base({ orderIds: [o1.id, autre.id], blIds: [b1.id, bx.id], lines: [L(b1, o1, o1.id, 'm1', 6), { ...L(bx, autre, autre.id, 'x1', 2) }] }));
+  assert.equal(r.json().erreur, 'bl_clients_differents', r.body);
+  // plus que livré par le BL : refusé
+  r = await putG('invoices', await base({ orderIds: [o1.id], blIds: [b1.id], lines: [L(b1, o1, o1.id, 'm1', 7)] }));
+  assert.equal(r.json().erreur, 'trop_facture', r.body);
+  // ligne rattachée à un BL hors facture : refusée
+  r = await putG('invoices', await base({ orderIds: [o1.id], blIds: [b1.id], lines: [L(b2, o1, o1.id, 'm1', 4)] }));
+  assert.equal(r.json().erreur, 'bl_hors_facture', r.body);
+  // commande citée sans BL correspondant : refusée
+  r = await putG('invoices', await base({ orderIds: [o1.id, autre.id], blIds: [b1.id], lines: [L(b1, o1, o1.id, 'm1', 6)] }));
+  assert.equal(r.json().erreur, 'commande_hors_bl', r.body);
+  // 3 BL, 2 commandes, prestation (transport) de la commande 1 : accepté, une ligne par BL
+  const lignes = [L(b1, o1, o1.id, 'm1', 6), { designation: 'Transport', qty: 1, pu: 10, service: true, lineIds: ['m2'], qtyBy: { m2: 1 }, orderId: o1.id, orderNumber: o1.number, blId: b1.id, blNumber: b1.number },
+    L(b2, o1, o1.id, 'm1', 4), L(b3, o2, o2.id, 'n1', 4)];
+  r = await putG('invoices', await base({ orderIds: [o1.id, o2.id], orderNumbers: [o1.number, o2.number], blIds: [b1.id, b2.id, b3.id], blNumbers: [b1.number, b2.number, b3.number], clientPO: 'BC-77', lines: lignes }));
+  assert.equal(r.statusCode, 200, r.body);
+  const f = r.json();
+  assert.equal(f.lines.length, 4); assert.deepEqual(f.blIds, [b1.id, b2.id, b3.id]);
+  // un BL déjà facturé ne se refacture pas (et ne s'annule plus)
+  r = await putG('invoices', await base({ orderIds: [o2.id], blIds: [b3.id], lines: [L(b3, o2, o2.id, 'n1', 4)] }));
+  assert.equal(r.json().erreur, 'bl_deja_facture', r.body);
+  const G = await gestionDe(J.commercial);
+  r = await putG('bls', { ...G.bls.find((x) => x.id === b2.id), status: 'annule' }, J.commercial);
+  assert.equal(r.json().erreur, 'bl_facture');
+  // les BL d'une facture émise ne changent pas ; modifier une ligne reste plafonné par la livraison du BL
+  r = await putG('invoices', { ...f, blIds: [b1.id, b2.id] });
+  assert.equal(r.json().erreur, 'champ_fige');
+  r = await putG('invoices', { ...f, lines: f.lines.map((l, i) => (i === 3 ? { ...l, qty: 5, qtyBy: { n1: 5 } } : l)) });
+  assert.equal(r.json().erreur, 'trop_facture', r.body);
+  r = await putG('invoices', { ...f, lines: f.lines.map((l, i) => (i === 3 ? { ...l, pu: 21 } : l)) });
+  assert.equal(r.statusCode, 200, r.body);
+  // avoir sur une facture multi-BL : possible ligne par ligne
+  const av = await appel('POST', '/api/ventes/avoirs', { jeton: J.compta, body: { facture_id: f.id, motif: 'Retour', lignes: [{ index: 2, qte: 1 }] } });
+  assert.equal(av.statusCode, 201, av.body);
+  const v = (await appel('GET', `/api/ventes/avoirs/${av.json().id}`, { jeton: J.compta })).json();
+  assert.equal(v.lignes[0].designation, f.lines[2].designation);
+  await appel('POST', `/api/ventes/avoirs/${av.json().id}/annuler`, { jeton: J.compta, body: { motif: 'test', version: v.version } });
+  // annulation de la facture → les 3 BL redeviennent facturables
+  const f2 = (await gestionDe(J.compta)).invoices.find((x) => x.id === f.id);
+  r = await putG('invoices', { ...f2, status: 'annulee' });
+  if (r.statusCode === 200) {
+    r = await putG('invoices', await base({ orderIds: [o2.id], blIds: [b3.id], lines: [L(b3, o2, o2.id, 'n1', 4)] }));
+    assert.equal(r.statusCode, 200, r.body);
+  } else assert.equal(r.json().erreur, 'facture_avec_avoir');
+  // les anciennes factures « selon un BL » (orderId seul) restent comptées dans le déjà facturé
+  const o3 = await cmd(SOU, [{ id: 'p1', designation: 'Polo', size: 'S', qty: 5, pu: 23.8 }]);
+  const b4 = await bl(o3, [{ lineId: 'p1', designation: 'Polo', size: 'S', qty: 5 }], `${AN}-07-06`);
+  r = await putG('invoices', await base({ orderId: o3.id, blIds: [b4.id], lines: [{ designation: 'Polo', qty: 3, pu: 20, lineIds: ['p1'], qtyBy: { p1: 3 } }] }));
+  assert.equal(r.statusCode, 200, r.body);
+  r = await putG('invoices', await base({ orderIds: [o3.id], blIds: [], lines: [{ designation: 'Polo', qty: 3, pu: 20, lineIds: ['p1'], qtyBy: { p1: 3 }, orderId: o3.id }, { designation: 'X', qty: 1, pu: 1, lineIds: ['zz'], qtyBy: { zz: 1 }, orderId: o2.id }], orderIdsX: 1 }));
+  assert.equal(r.json().erreur, "commande_hors_facture", r.body);
+});
+
+test('0.13.0 Paramètres › Factures : interrupteur facturation multi-BL (admin seulement, contrôlé par le serveur, audité)', async () => {
+  let r = await appel('GET', '/api/parametres/factures', { jeton: J.commercial });
+  assert.equal(r.json().multi_bl, true, 'activée par défaut');
+  r = await appel('PUT', '/api/parametres/factures', { jeton: J.commercial, body: { multi_bl: false } });
+  assert.equal(r.statusCode, 403, 'le commercial ne change pas le réglage');
+  r = await appel('PUT', '/api/parametres/factures', { jeton: J.admin, body: { multi_bl: false } });
+  assert.equal(r.statusCode, 200, r.body); assert.equal(r.json().multi_bl, false);
+  const cat = (await appel('GET', '/api/infographie/catalogue', { jeton: J.commercial })).json().catalogue;
+  assert.equal(cat.gestion.multiBL, false, 'la Gestion reçoit le réglage');
+  const num = async (kind, j = J.commercial) => (await appel('POST', '/api/commercial/numero', { jeton: j, body: { kind } })).json().numero;
+  const SOU = { id: 'cl-local', name: 'Hôtel Sousse' };
+  const o = (await putG('orders', { number: await num('order'), status: 'en_cours', client: SOU, lines: [{ id: 'q1', designation: 'Polo', size: 'M', qty: 6, pu: 20 }] }, J.commercial)).json();
+  const mk = async (q) => (await putG('bls', { number: await num('bl'), date: `${AN}-08-01`, orderId: o.id, orderNumber: o.number, client: SOU, lines: [{ lineId: 'q1', designation: 'Polo', size: 'M', qty: q }], status: 'livre' }, J.commercial)).json();
+  const b1 = await mk(3), b2 = await mk(3);
+  const L = (b) => ({ designation: 'Polo', qty: 3, pu: 20, lineIds: ['q1'], qtyBy: { q1: 3 }, orderId: o.id, orderNumber: o.number, blId: b.id, blNumber: b.number });
+  const fac = async (bls) => ({ number: await num('invoice', J.compta), date: `${AN}-08-02`, client: SOU, tva: 19, timbre: 1, pricesTTC: false, payments: [], status: 'validee', orderIds: [o.id], blIds: bls.map((b) => b.id), lines: bls.map(L) });
+  r = await putG('invoices', await fac([b1, b2]));
+  assert.equal(r.json().erreur, 'multi_bl_desactive', r.body);
+  r = await putG('invoices', await fac([b1]));
+  assert.equal(r.statusCode, 200, 'un seul BL reste possible : ' + r.body);
+  const aud = (await pool.query(`select count(*)::int n from noyau.audit where action = 'parametre_factures_modifie'`)).rows[0].n;
+  assert.equal(aud, 1);
+  r = await appel('PUT', '/api/parametres/factures', { jeton: J.admin, body: { multi_bl: true } });
+  assert.equal(r.json().multi_bl, true);
+});

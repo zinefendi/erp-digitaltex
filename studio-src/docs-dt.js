@@ -44,7 +44,7 @@ export async function buildDocDT(d) {
 
   // ---- pagination des lignes
   const SZ = 8.6, LH = 10.6, GAP = 5;
-  const rows = (d.lignes || []).map((l) => ({ l, des: wrap(l.designation, SZ, B, COL.des[1] - COL.des[0] - 10, 8) }));
+  const rows = (d.lignes || []).map((l) => ({ l, des: l.titre ? wrap(l.designation, l.recap ? 7.8 : 8.4, l.recap ? R : B, COL.mt[1] - COL.code[0] - 12, 3) : wrap(l.designation, SZ, B, COL.des[1] - COL.des[0] - 10, 8) }));
   const pages = [[]]; let y = CORPS_HAUT;
   for (const r of rows) {
     const h = r.des.length * LH + GAP;
@@ -84,6 +84,11 @@ export async function buildDocDT(d) {
     let yy = CORPS_HAUT;
     for (const r of pageRows) {
       const l = r.l, b = yy + 8;
+      if (l.titre) { // 0.13.0 : sous-titre « BL n° … — Commande n° … » ou ligne du récapitulatif des BL
+        if (!l.recap) p.drawRectangle({ x: COL.code[0] + 1, y: H - (yy + r.des.length * LH + 1), width: COL.mt[1] - COL.code[0] - 2, height: r.des.length * LH + 2, color: rgb(0.918, 0.945, 0.98) });
+        r.des.forEach((s, i) => t(s, COL.code[0] + 5, b + i * LH, l.recap ? 7.8 : 8.4, l.recap ? R : B, l.recap ? MUTE : NAVY));
+        yy += r.des.length * LH + GAP; continue;
+      }
       t(fit(l.code || '', 7.6, B, COL.code[1] - COL.code[0] - 6), COL.code[0] + 4, b + 1, 7.6, B);
       r.des.forEach((s, i) => t(s, COL.des[0] + 6, b + i * LH, SZ, B));
       right(String(r3(l.qte)).replace('.', ','), COL.qte[1] - 5, b, 9);
@@ -143,13 +148,35 @@ const lignesDT = (X) => X.lines.map((l) => ({ code: l.article || '', designation
 const totauxDT = (inv, X, acompte = 0) => ({ ht: X.ht, remise: X.remise, fodec: X.fodec, tauxFodec: +inv.fodec || 0, tva: X.tva, tauxTva: +inv.tva || 0, ttc: X.ttc, timbre: X.timbre, acompte, net: r3(X.net - acompte) });
 
 /** Facture de la Gestion → document DIGITAL-TEX. */
+const frD = (d) => (d ? String(d).split('-').reverse().join('/') : '');
+/** 0.13.0 : lignes de la facture regroupées par BL (sous-titre BL / commande / BC), précédées du récapitulatif des BL et commandes. */
+export function lignesFactureDT(inv, X) {
+  const L = lignesDT(X);
+  if (!(inv.lines || []).some((l) => l.blId)) return L;
+  const nums = inv.blNumbers || [], ids = inv.blIds || [];
+  const info = ids.map((id, k) => { const l0 = (inv.lines || []).find((l) => l.blId === id) || {}; return { id, num: nums[k] || l0.blNumber || '', date: (inv.blDates || [])[k] || l0.blDate || '', cmd: l0.orderNumber || '', bc: l0.clientPO || '' }; });
+  const out = [];
+  if (info.length > 1) {
+    out.push({ titre: true, designation: `RÉCAPITULATIF : ${info.length} BL — commande${new Set(info.map((b) => b.cmd)).size > 1 ? 's' : ''} ${[...new Set(info.map((b) => b.cmd).filter(Boolean))].join(', ')}` });
+    for (const b of info) out.push({ titre: true, recap: true, designation: `BL n° ${b.num}${b.date ? ' du ' + frD(b.date) : ''}${b.cmd ? ' · Commande n° ' + b.cmd : ''}${b.bc ? ' · BC client ' + b.bc : ''}` });
+  }
+  const vus = new Set();
+  (inv.lines || []).forEach((l, i) => {
+    const k = l.blId || '';
+    if (!vus.has(k)) { vus.add(k); const b = info.find((x) => x.id === k); out.push({ titre: true, designation: b ? `BL n° ${b.num}${b.date ? ' du ' + frD(b.date) : ''}${b.cmd ? ' — Commande n° ' + b.cmd : ''}${b.bc ? ' — BC client ' + b.bc : ''}` : 'Autres lignes' }); }
+    out.push(L[i]);
+  });
+  return out;
+}
+
 export function dataFacture(inv, { clientCode } = {}) {
   const X = invoiceTotals(inv), C = devDe(inv), exp = !!inv.export || C !== 'DT';
+  const cmds = (inv.orderNumbers || []).length ? inv.orderNumbers : inv.orderNumber ? [inv.orderNumber] : [];
   return {
     titre: exp ? 'FACTURE / INVOICE' : 'FACTURE', fond: 'facture', numero: inv.number, date: inv.date, devise: C,
-    refs: [(inv.blNumbers || []).length ? 'BL ' + inv.blNumbers.join(', ') : '', inv.orderNumber ? 'Commande ' + inv.orderNumber : '', C !== 'DT' ? 'Devise ' + C : '', inv.incoterm ? 'Incoterm ' + inv.incoterm : ''].filter(Boolean).join(' · '),
+    refs: [(inv.blNumbers || []).length ? 'BL ' + inv.blNumbers.join(', ') : '', cmds.length ? (cmds.length > 1 ? 'Commandes ' : 'Commande ') + cmds.join(', ') : '', C !== 'DT' ? 'Devise ' + C : '', inv.incoterm ? 'Incoterm ' + inv.incoterm : ''].filter(Boolean).join(' · '),
     client: { ...(inv.client || {}), code: clientCode || inv.client?.code || '' },
-    lignes: lignesDT(X), totaux: totauxDT(inv, X, r3(+inv.advance || 0)), pieces: pieces(inv.lines), bc: inv.clientPO || '',
+    lignes: lignesFactureDT(inv, X), totaux: totauxDT(inv, X, r3(+inv.advance || 0)), pieces: pieces(inv.lines), bc: inv.clientPO || '',
     lettres: { libelle: 'FACTURE', montant: X.net },
     extras: [['Échéance', fr(inv.due)], ['Mode de règlement', inv.paymentMode], ['Référence El Fatoora (TTN)', inv.ttnRef],
       ...(exp ? [['', 'Vente à l’exportation — TVA non applicable (article 11 du Code de la TVA)']] : []), ['Note', inv.note]],

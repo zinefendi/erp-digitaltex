@@ -153,6 +153,24 @@ module.exports = async function routesParametres(app) {
     });
   });
 
+  // ------------------------------------------------------------ Factures (0.13.0)
+  // Réglages de facturation de l'administrateur. Lecture : tout compte connecté ; écriture : parametres.societe/modifier.
+  const lireFactures = async (db) => {
+    const o = (await db.query(`select o.valeur, o.maj_le, u.identifiant maj_par from parametres.options o left join noyau.utilisateurs u on u.id = o.maj_par where o.code = 'facturation_multi_bl'`)).rows[0];
+    return { multi_bl: (o?.valeur ?? 'oui') === 'oui', maj_le: o?.maj_le || null, maj_par: o?.maj_par || null };
+  };
+  app.get('/api/parametres/factures', { preHandler: CONNECTE }, async () => lireFactures(pool));
+  app.put('/api/parametres/factures', {
+    preHandler: S.exigerConnexion({ droit: ['parametres.societe', 'modifier'] }),
+    schema: { body: { type: 'object', required: ['multi_bl'], additionalProperties: false, properties: { multi_bl: { type: 'boolean' } } } },
+  }, async (req) => transaction(async (c) => {
+    const avant = await lireFactures(c);
+    await c.query(`insert into parametres.options (code, libelle, valeur, commentaire, maj_le, maj_par) values ('facturation_multi_bl', 'Facturation multi-BL', $1, '', now(), $2)
+      on conflict (code) do update set valeur = excluded.valeur, maj_le = now(), maj_par = excluded.maj_par`, [req.body.multi_bl ? 'oui' : 'non', req.utilisateur.id]);
+    if (avant.multi_bl !== req.body.multi_bl) await S.auditer(c, req, 'parametre_factures_modifie', { entite: 'parametres', entiteId: 'facturation_multi_bl', avant: { multi_bl: avant.multi_bl }, apres: { multi_bl: req.body.multi_bl } });
+    return lireFactures(c);
+  }));
+
   // ------------------------------------------------------------ Accueil : 10 modules
   // État de chaque module (lot du calendrier) et compteurs utiles — sans montant si non autorisé.
   const LOTS = {

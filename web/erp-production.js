@@ -5,7 +5,7 @@
    dt, r3, jour, iso, entete, rechercheHtml, route, ECRANS, boutonsExport).
    Aucun prix n'apparaît ici : le serveur n'envoie jamais les montants avec un OF. */
 
-const qteF = (v) => (+v || 0).toLocaleString('fr-FR', { maximumFractionDigits: 3 });
+// qteF est déclaré dans erp-stocks.js (chargé avant) : une 2e déclaration bloquait tout ce script (corrigé en 0.13.0).
 const NOM_PARTIE = { 1: 'Coupe', 2: 'Marquage', 3: 'Assemblage et finition' };
 const ETAT_PARTIE = { en_attente: ['En attente', 'fut'], en_cours: ['En cours', 'vig'], validee: ['Validée', 'vig'], sans_objet: ['Sans objet', 'anc'] };
 const STATUT_OF = { cree: ['Créé', 'fut'], en_cours: ['En cours', 'vig'], termine: ['Terminé', 'vig'], annule: ['Annulé', 'anc'] };

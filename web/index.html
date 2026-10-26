@@ -477,11 +477,11 @@ async function entrer() {
 /* ---------- Paramètres ---------- */
 let PS = {};
 async function pageParametres(m) {
-  const onglets = [['societe', 'Société', 'parametres.societe'], ['fiscalite', 'Fiscalité', 'parametres.fiscalite'], ['numerotation', 'Numérotation', 'parametres.numerotation']].filter((o) => peut(o[2]));
+  const onglets = [['societe', 'Société', 'parametres.societe'], ['fiscalite', 'Fiscalité', 'parametres.fiscalite'], ['numerotation', 'Numérotation', 'parametres.numerotation'], ['factures', 'Factures', 'parametres.societe']].filter((o) => peut(o[2]));
   let o = location.hash.split('/')[1]; if (!onglets.some((x) => x[0] === o)) o = onglets[0][0];
   m.innerHTML = `<div class="entete"><div><h2>Paramètres</h2><p>Ces informations figurent sur les devis, BL et factures émis par tous les postes.</p></div></div>
     <nav class="onglets">${onglets.map(([k, t]) => `<a href="#parametres/${k}" class="${k === o ? 'on' : ''}">${t}</a>`).join('')}</nav><div id="p-param"><div class="vide">Chargement…</div></div>`;
-  try { await ({ societe: ongletSociete, fiscalite: ongletFiscalite, numerotation: ongletNumerotation })[o]($('#p-param')); }
+  try { await ({ societe: ongletSociete, fiscalite: ongletFiscalite, numerotation: ongletNumerotation, factures: ongletFactures })[o]($('#p-param')); }
   catch (x) { $('#p-param').innerHTML = `<div class="vide">${esc(x.message)}</div>`; }
 }
 async function ongletSociete(el) {
@@ -535,6 +535,24 @@ async function ongletFiscalite(el) {
       <td class="small mute masque-mobile">${esc(x.commentaire)}${x.cree_par ? ` · ${esc(x.cree_par)}` : ''}</td>
       <td>${!ro && x.a_venir ? `<button class="btn ghost sm" data-act="fisc-retirer" data-id="${x.id}">Retirer</button>` : ''}</td></tr>`).join('')).join('')}</tbody></table></div>`;
   PS.fisc = L;
+}
+// 0.13.0 : Paramètres › Factures — réglages de facturation de l'administrateur
+async function ongletFactures(el) {
+  const f = PS.factures = await api('GET', '/api/parametres/factures');
+  const ro = !peut('parametres.societe', 'modifier');
+  el.innerHTML = `<div class="panneau" style="padding:16px 18px">
+    <label style="display:flex;gap:14px;align-items:flex-start;cursor:${ro ? 'default' : 'pointer'}">
+      <input type="checkbox" id="pf-multibl" style="width:22px;height:22px;margin-top:2px" ${f.multi_bl ? 'checked' : ''} ${ro ? 'disabled' : ''}>
+      <span><b>Facturation multi-BL</b> — <span class="${f.multi_bl ? 'vert' : 'rouge'}" id="pf-etat">${f.multi_bl ? 'activée' : 'désactivée'}</span><br>
+      <span class="mute small">Activée : une facture peut regrouper plusieurs bons de livraison d’un même client (bouton « Facturer des BL » dans Commercial › Factures) ; les lignes sont groupées par BL, avec les références des BL, des commandes et des BC client, et un récapitulatif.<br>
+      Désactivée : une facture reprend un seul BL (fonctionnement d’avant). Les factures déjà émises ne changent pas.</span>
+      ${f.maj_par ? `<br><span class="mute small">Dernière modification : ${esc(f.maj_par)} · ${jour(f.maj_le)}</span>` : ''}</span></label>
+    ${ro ? '<p class="mute small" style="margin-top:10px">Réservé à l’administrateur (droit Paramètres › Société › modifier).</p>' : ''}</div>`;
+  const cb = $('#pf-multibl', el);
+  if (cb && !ro) cb.addEventListener('change', async () => {
+    try { PS.factures = await api('PUT', '/api/parametres/factures', { multi_bl: cb.checked }); toast(`Facturation multi-BL ${cb.checked ? 'activée' : 'désactivée'}.`); if (typeof versCadres === 'function') versCadres({ type: 'rafraichir' }); ongletFactures(el); }
+    catch (x) { cb.checked = !cb.checked; toast(x.message, true); }
+  });
 }
 async function ongletNumerotation(el) {
   const L = PS.num = await api('GET', '/api/parametres/numerotation');
@@ -872,6 +890,7 @@ document.addEventListener('click', async (e) => {
 </script>
 <script src="/erp-coquille.js"></script>
 <script src="/docs-dt.js"></script>
+<script src="/refpick.js"></script>
 <script src="/erp-ventes.js"></script>
 <script src="/erp-stocks.js"></script>
 <script src="/erp-production.js"></script>

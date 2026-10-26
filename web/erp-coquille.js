@@ -126,6 +126,7 @@ const MODS = {
     fiscalite: { t: 'natif', ecran: 'onglet', onglet: 'fiscalite', ico: 'percent', d: 'TVA, timbre, datés' },
     baremes_paie: { t: 'futur', lot: 9, ico: 'scale', d: 'Barèmes CNSS et IRPP datés', cdc: ['Réponse du comptable (21/10/2026) : barème de paie libre, saisi par la société ; la grille de la convention collective sectorielle de la bonneterie et de la confection est affichée à titre indicatif seulement.', 'Tous les taux et barèmes sont des tables datées : une nouvelle valeur ne modifie jamais un bulletin déjà validé.'] },
     numerotation: { t: 'natif', ecran: 'onglet', onglet: 'numerotation', ico: 'hash', d: 'Préfixes et compteurs' },
+    factures_param: { t: 'natif', ecran: 'onglet', onglet: 'factures', fonction: 'societe', ico: 'doc', libelle: 'Factures', d: 'Facturation multi-BL (activer / désactiver)' },
     audit: { t: 'natif', ecran: 'journal', ico: 'list', d: 'Qui a fait quoi, et quand' },
     sauvegardes: { t: 'natif', ecran: 'sauvegardes', ico: 'save', d: 'Copies de chaque nuit' },
   } },
@@ -493,9 +494,10 @@ function ecranFutur(m, mod, fn, d) {
 async function ecranOngletParam(m, o) {
   const t = { societe: ['Société', 'Ces informations figurent sur les devis, BL et factures émis par tous les postes, et dans le Studio 3D.'],
     fiscalite: ['Fiscalité', 'Valeurs datées : une nouvelle valeur ne modifie jamais les documents déjà émis.'],
-    numerotation: ['Numérotation', 'Un seul compteur par type de document et par année, partagé par tous les postes.'] }[o];
+    numerotation: ['Numérotation', 'Un seul compteur par type de document et par année, partagé par tous les postes.'],
+    factures: ['Factures', 'Réglages de facturation de l’administrateur, valables pour tous les postes.'] }[o];
   m.innerHTML = entete(t[0], t[1]) + '<div id="p-param"><div class="vide">Chargement…</div></div>';
-  await ({ societe: ongletSociete, fiscalite: ongletFiscalite, numerotation: ongletNumerotation })[o]($('#p-param'));
+  await ({ societe: ongletSociete, fiscalite: ongletFiscalite, numerotation: ongletNumerotation, factures: ongletFactures })[o]($('#p-param'));
 }
 ECRANS.comptes = (m) => pageComptes(m);
 ECRANS.roles = (m) => pageRoles(m);

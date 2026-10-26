@@ -82,7 +82,7 @@ async function formDevisPro(type, x, clients, produits) {
     try { await api('POST', `/api/verrous/${T.ent}/${x.id}`); }
     catch (er) { ro = true; verrouMsg = er.message; }
   }
-  const [fisc, codes, cat] = await Promise.all([api('GET', '/api/parametres/fiscalite').catch(() => []), api('GET', '/api/produits/codes-article').catch(() => []), api('GET', '/api/infographie/catalogue').then((r) => r.catalogue).catch(() => null)]);
+  const [fisc, codes, cat, arts] = await Promise.all([api('GET', '/api/parametres/fiscalite').catch(() => []), api('GET', '/api/produits/codes-article').catch(() => []), api('GET', '/api/infographie/catalogue').then((r) => r.catalogue).catch(() => null), api('GET', '/api/commercial/articles').catch(() => [])]);
   const STAFFS = cat && Array.isArray(cat.staff) && cat.staff.filter(Boolean).length ? cat.staff.filter(Boolean) : ['JARDIN', 'RECEPTION', 'HOUSEKEEPING', 'ADMINISTRATION', 'ANIMATION', 'LINGERIE', 'CUISINE', 'F&B'];
   const fodecDefaut = (fisc.find((f) => f.code === 'fodec' && f.en_vigueur) || { valeur: 0 }).valeur;
   const libCode = Object.fromEntries(codes.map((c) => [c.code, c.libelle]));
@@ -107,7 +107,7 @@ async function formDevisPro(type, x, clients, produits) {
   const dessL = () => {
     const d = devise();
     $('#vd-l').innerHTML = `<table class="nombres"><thead><tr><th>Réf.</th><th>Désignation</th><th>Service</th><th>Couleur</th><th>Taille</th><th class="n">Qté</th>${prix ? '<th class="n">PRIX H.T.</th><th class="n">Remise %</th><th class="n">Total H.T.</th>' : ''}<th></th></tr></thead><tbody>
-      ${lignes.map((l, i) => `<tr data-fiche="${esc(l.produit || '')}" title="${l.produit ? 'Double-clic : fiche technique' : ''}"><td><input data-l="${i}" data-c="produit" list="vd-pf" value="${esc(l.produit || '')}" placeholder="${l.service ? 'Prestation' : 'P00126H'}" style="width:92px;text-transform:uppercase" ${dis || (l.service ? 'disabled' : '')}></td>
+      ${lignes.map((l, i) => `<tr data-fiche="${esc(l.produit || '')}" title="${l.produit ? 'Double-clic : fiche technique' : ''}"><td><input data-l="${i}" data-c="produit" autocomplete="off" value=""${esc(l.produit || '')}" placeholder="${l.service ? 'Prestation' : 'P00126H'}" style="width:92px;text-transform:uppercase" ${dis || (l.service ? 'disabled' : '')}></td>
         <td><input data-l="${i}" data-c="designation" value="${esc(l.designation)}" maxlength="300" style="width:100%;min-width:150px" ${dis}>${l.service ? '<div class="mute small">Prestation (transport, frais…)</div>' : ''}</td>
         <td><select data-l="${i}" data-c="staff" style="max-width:130px" ${dis}><option value="">—</option>${[...new Set([...STAFFS, l.staff].filter(Boolean))].map((s2) => `<option ${s2 === l.staff ? 'selected' : ''}>${esc(s2)}</option>`).join('')}</select></td>
         <td><input data-l="${i}" data-c="couleur" value="${esc(l.couleur || '')}" style="width:72px" ${dis}></td><td><input data-l="${i}" data-c="taille" value="${esc(l.taille || '')}" style="width:48px" ${dis}></td>
@@ -115,7 +115,6 @@ async function formDevisPro(type, x, clients, produits) {
         ${prix ? `<td class="n"><input data-l="${i}" data-c="pu" type="number" step="0.001" min="0" value="${l.pu ?? 0}" style="width:84px" ${dis}></td><td class="n"><input data-l="${i}" data-c="remise" type="number" step="0.5" min="0" max="100" value="${l.remise || 0}" style="width:52px" ${dis}></td>
         <td class="n" data-tot>${md((+l.qte || 0) * (+l.pu || 0) * (1 - (+l.remise || 0) / 100), d)}</td>` : ''}
         <td>${ro || lignes.length < 2 ? '' : `<button type="button" class="btn ghost sm" data-del="${i}" aria-label="Supprimer la ligne">✕</button>`}</td></tr>`).join('')}</tbody></table>
-      <datalist id="vd-pf">${pfOpts}</datalist>
       <div class="row-f" style="justify-content:space-between;padding:8px 0">${ro ? '<span></span>' : '<span><button type="button" class="btn ghost sm" data-add>+ Produit</button> <button type="button" class="btn ghost sm" data-add-s>+ Prestation</button></span>'}<span class="small" id="vd-tot"></span></div>`;
     majTot();
   };
@@ -194,6 +193,24 @@ async function formDevisPro(type, x, clients, produits) {
   if (x && modifiable && !verrouMsg) fen.addEventListener('close', () => api('DELETE', `/api/verrous/${T.ent}/${x.id}`).catch(() => {}), { once: true });
   dessL(); dessExp();
   const pf = (ref) => produits.find((p) => p.reference === ref);
+  // 0.13.0 : sélecteur de référence commun (liste complète au clic, filtrée à la frappe, 6 lignes, ↑ ↓ Entrée) — produits finis + articles / prestations
+  const REFS = [...produits.filter((p) => !p.annule).map((p) => ({ ref: p.reference, designation: `${libCode[p.code_article] || p.code_article}${p.client_nom ? ' — ' + p.client_nom : ''}`, type: 'Produit fini', ht: p.prix_ht ?? null, pf: true })),
+    ...(Array.isArray(arts) ? arts : []).filter((a) => a.actif !== false).map((a) => ({ ref: a.code, designation: a.designation, type: a.type === 'prestation' ? 'Prestation' : 'Article', ht: a.prix_ht ?? null, service: a.type === 'prestation' }))];
+  if (window.RefPick && !ro) {
+    const RP = window.RefPick.attachRefPicker(z, {
+      getItems: () => REFS, prix: () => prix,
+      estRef: (el) => el.dataset.c === 'produit' && el.dataset.l !== undefined,
+      choisir: (el, r) => {
+        const l = lignes[+el.dataset.l]; if (!l) return;
+        const tc = +($('#vd-tc')?.value || 0), conv = (ht) => (estExport() ? (tc > 0 ? Math.round(ht / tc * 100) / 100 : 0) : r3(ht));
+        if (r.pf) { l.produit = r.ref; l.service = false; l.designation = r.designation; }
+        else { l.produit = ''; l.service = !!r.service; l.designation = `${r.ref} · ${r.designation}`; }
+        if (prix && r.ht !== null && r.ht !== undefined) l.pu = conv(+r.ht);
+        dessL(); const nx = z.querySelector(`[data-l="${el.dataset.l}"][data-c="qte"]`); if (nx) { nx.focus(); nx.select && nx.select(); }
+      },
+    });
+    fen.addEventListener('close', () => RP.detacher(), { once: true });
+  }
   z.addEventListener('change', (e) => {
     const t = e.target;
     if (t.id === 'vd-cl') { cl = clients.find((c) => c.id === t.value) || null; if (estExport() && !$('#vd-lg').dataset.touche) $('#vd-lg').value = 'en'; dessL(); dessExp(); }

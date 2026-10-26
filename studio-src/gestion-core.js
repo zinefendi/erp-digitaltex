@@ -61,12 +61,31 @@ export function deliveryState(db, order) {
   const tot = goods.reduce((s, l) => s + (+l.qty || 0), 0), done = goods.reduce((s, l) => s + Math.min(+l.qty || 0, d[l.id] || 0), 0);
   return { tot, done, state: !tot ? 'none' : done <= 0 ? 'todo' : done >= tot ? 'done' : 'partial' };
 }
-export const invoicesOf = (db, order) => db.invoices.filter((i) => i.orderId === order.id && i.status !== 'annulee');
+// ERP 0.13.0 : une facture peut regrouper plusieurs BL (et donc plusieurs commandes) d'un même client.
+// orderIds = commandes de la facture ; chaque ligne porte orderId / blId (sinon : la commande unique de la facture).
+export const invOrderIds = (i) => (Array.isArray(i.orderIds) && i.orderIds.length ? i.orderIds : i.orderId ? [i.orderId] : []);
+export const lineOrderId = (i, l) => (l && l.orderId) || (invOrderIds(i).length === 1 ? invOrderIds(i)[0] : i.orderId || '');
+export const invoicesOf = (db, order) => db.invoices.filter((i) => i.status !== 'annulee' && invOrderIds(i).includes(order.id));
 export function invoicedLines(db, order, exceptInv) {
-  const m = {}; for (const i of invoicesOf(db, order)) if (i.id !== exceptInv) for (const l of i.lines || []) for (const id of l.lineIds || []) m[id] = (m[id] || 0) + (l.qtyBy ? +l.qtyBy[id] || 0 : 0);
+  const m = {}; for (const i of invoicesOf(db, order)) if (i.id !== exceptInv) for (const l of i.lines || []) { if (lineOrderId(i, l) !== order.id) continue; for (const id of l.lineIds || []) m[id] = (m[id] || 0) + (l.qtyBy ? +l.qtyBy[id] || 0 : 0); }
   return m;
 }
-export const advanceUsed = (db, order, exceptInv) => r3(invoicesOf(db, order).filter((i) => i.id !== exceptInv).reduce((s, i) => s + (+i.advance || 0), 0));
+const advOf = (i, order) => (i.advanceBy && typeof i.advanceBy === 'object' ? +i.advanceBy[order.id] || 0 : invOrderIds(i).length <= 1 ? +i.advance || 0 : 0);
+export const advanceUsed = (db, order, exceptInv) => r3(invoicesOf(db, order).filter((i) => i.id !== exceptInv).reduce((s, i) => s + advOf(i, order), 0));
+/** BL d'une facture (multi-BL ou ancienne facture « selon le BL »), dans l'ordre de la facture. */
+export const invBlIds = (i) => (Array.isArray(i.blIds) ? i.blIds : []);
+/** BL non annulés et non facturés (facture non annulée). */
+export const blInvoiced = (db, b) => db.invoices.find((i) => i.status !== 'annulee' && invBlIds(i).includes(b.id)) || null;
+export const blsToInvoice = (db) => db.bls.filter((b) => b.status !== 'annule' && !blInvoiced(db, b));
+/** Groupes d'affichage d'une facture multi-BL : [{ key, titre, lignes:[{l, i}] }] (lignes sans BL : groupe « Autres lignes »). */
+export function invoiceGroups(inv, lines) {
+  const L = lines || inv.lines || [];
+  if (!L.some((l) => l.blId)) return [{ key: '', titre: '', lignes: L.map((l, i) => ({ l, i })) }];
+  const g = new Map();
+  L.forEach((l, i) => { const k = l.blId || ''; if (!g.has(k)) g.set(k, { key: k, titre: groupTitle(l), lignes: [] }); g.get(k).lignes.push({ l, i }); });
+  return [...g.values()];
+}
+export const groupTitle = (l) => (l.blId ? [`BL n° ${l.blNumber || ''}${l.blDate ? ' du ' + String(l.blDate).split('-').reverse().join('/') : ''}`, l.orderNumber ? 'Commande n° ' + l.orderNumber : '', l.clientPO ? 'BC client ' + l.clientPO : ''].filter(Boolean).join(' — ') : 'Autres lignes');
 export const paidOf = (inv) => r3((+inv.advance || 0) + (inv.payments || []).reduce((s, p) => s + (+p.amount || 0), 0));
 export function invoiceState(inv) {
   if (inv.status === 'annulee') return 'annulee';
